@@ -1187,11 +1187,19 @@ module Swanium
 
       private def execute_load_far_pointer(bus : MemoryBus, es : Bool) : UInt32
         mod_rm = decode_mod_rm(bus)
-        unless address = mod_rm.operand.memory?
-          @fault_opcode = es ? 0xC4_u8 : 0xC5_u8
-          @halted = true
-          return 1_u32
-        end
+        address = if memory_address = mod_rm.operand.memory?
+                    memory_address
+                  else
+                    # The V30 extends the ModRM register form for LES/LDS
+                    # into an effective-address selector instead of faulting.
+                    # WSCpuTest exercises this NEC-specific table directly.
+                    rm = mod_rm.operand.register?.not_nil!
+                    segment = case rm & 0x07_u8
+                              when 2_u8, 3_u8, 6_u8 then @registers.ss
+                              else                       @registers.ds
+                              end
+                    Core.linear_address(segment, extended_register_offset(rm))
+                  end
         @registers.set_reg16(mod_rm.reg, bus.read_u16(address))
         segment = bus.read_u16(address &+ 2_u32)
         es ? (@registers.es = segment) : (@registers.ds = segment)
