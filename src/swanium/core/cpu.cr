@@ -40,6 +40,25 @@ module Swanium
       end
     end
 
+    struct CpuSnapshot
+      getter registers : Registers
+      getter flags : Flags
+      getter halted : Bool
+
+      def initialize(@registers : Registers, @flags : Flags, @halted : Bool)
+      end
+    end
+
+    struct InstructionTrace
+      getter code_segment : UInt16
+      getter instruction_pointer : UInt16
+      getter opcode : UInt8
+      getter cycles : UInt32
+
+      def initialize(@code_segment : UInt16, @instruction_pointer : UInt16, @opcode : UInt8, @cycles : UInt32)
+      end
+    end
+
     # Synchronous NEC V30 execution state. The opcode subset here establishes
     # the 8086-compatible data, stack, ALU, and branch paths used by the first
     # headless programs; unsupported instructions stop deterministically.
@@ -48,12 +67,14 @@ module Swanium
       property flags : Flags
       property halted : Bool
       getter fault_opcode : UInt8?
+      getter last_trace : InstructionTrace?
 
       def initialize
         @registers = Registers.new
         @flags = Flags.new
         @halted = false
         @fault_opcode = nil
+        @last_trace = nil
       end
 
       def reset(code_segment : UInt16, instruction_pointer : UInt16) : Nil
@@ -64,6 +85,7 @@ module Swanium
         @registers.sp = 0x2000_u16
         @halted = false
         @fault_opcode = nil
+        @last_trace = nil
       end
 
       def fetch_u8(bus : MemoryBus) : UInt8
@@ -82,8 +104,40 @@ module Swanium
       def step(bus : MemoryBus) : UInt32
         return 1_u32 if @halted
 
+        code_segment = @registers.cs
+        instruction_pointer = @registers.ip
         opcode = fetch_u8(bus)
-        execute(opcode, bus)
+        cycles = execute(opcode, bus)
+        @last_trace = InstructionTrace.new(code_segment, instruction_pointer, opcode, cycles)
+        cycles
+      end
+
+      def snapshot : CpuSnapshot
+        CpuSnapshot.new(@registers, @flags, @halted)
+      end
+
+      def restore(snapshot : CpuSnapshot) : Nil
+        @registers = snapshot.registers
+        @flags = snapshot.flags
+        @halted = snapshot.halted
+        @fault_opcode = nil
+        @last_trace = nil
+      end
+
+      # Accept an interrupt through the standard V30 real-mode vector table.
+      # Masking is owned by InterruptController; this method deliberately also
+      # serves software interrupts and exceptions.
+      def service_interrupt(bus : MemoryBus, vector : UInt8) : UInt32
+        push16(bus, @flags.to_u16)
+        push16(bus, @registers.cs)
+        push16(bus, @registers.ip)
+        @flags.interrupt = false
+        @flags.trap = false
+        vector_address = vector.to_u32 << 2
+        @registers.ip = bus.read_u16(vector_address)
+        @registers.cs = bus.read_u16(vector_address + 2_u32)
+        @halted = false
+        10_u32
       end
 
       private def execute(opcode : UInt8, bus : MemoryBus) : UInt32

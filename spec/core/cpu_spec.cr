@@ -82,4 +82,45 @@ describe Swanium::Core::Cpu do
     cpu.halted.should be_true
     cpu.fault_opcode.should eq(0x0F_u8)
   end
+
+  it "pushes state and loads a real-mode vector when servicing an interrupt" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.write_u16(0x20_u32, 0x4567_u16)
+    memory.write_u16(0x22_u32, 0x1234_u16)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0xABCD_u16, 0x0102_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0xFFFE_u16
+    cpu.flags.interrupt = true
+
+    cpu.service_interrupt(memory, 8_u8).should eq(10_u32)
+
+    cpu.registers.cs.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x4567_u16)
+    cpu.registers.sp.should eq(0xFFF8_u16)
+    memory.read_u16(0xFFF8_u32).should eq(0x0102_u16)
+    memory.read_u16(0xFFFA_u32).should eq(0xABCD_u16)
+    cpu.flags.interrupt.should be_false
+  end
+
+  it "captures a restorable CPU snapshot and an instruction trace" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xB8, 0x34, 0x12])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    snapshot = cpu.snapshot
+
+    cpu.step(memory)
+    trace = cpu.last_trace.not_nil!
+    trace.code_segment.should eq(0_u16)
+    trace.instruction_pointer.should eq(0_u16)
+    trace.opcode.should eq(0xB8_u8)
+    trace.cycles.should eq(1_u32)
+    cpu.registers.ax.should eq(0x1234_u16)
+
+    cpu.restore(snapshot)
+    cpu.registers.ax.should eq(0_u16)
+    cpu.registers.ip.should eq(0_u16)
+    cpu.last_trace.should be_nil
+  end
 end
