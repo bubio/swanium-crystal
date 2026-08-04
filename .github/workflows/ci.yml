@@ -13,10 +13,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - name: Install SDL2 development files (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2
       - name: Install SDL2 development files (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libsdl2-dev
-      - run: mise run setup
-      - run: mise run check
-      - run: mise run build
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
+        with:
+          cache: true
+      - run: mise run ci

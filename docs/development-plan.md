@@ -116,6 +116,19 @@ mise.toml
 shard.yml
 ```
 
+## CI と mise の方針
+
+ローカル開発と CI の検証コマンドを乖離させないため、CI も mise を使う。GitHub Actions の YAML は OS ごとのシステム依存を導入してから `mise run ci` を呼ぶだけにし、ビルド・整形・テストの手順を YAML に重複して書かない。
+
+- [x] `mise.toml` に Crystal と開発ツールの固定バージョン、`format`、`spec`、`build`、`ci` タスクを定義する
+- [x] `ci` タスクを `format`、`spec`、`build` の集約タスクにし、ローカルと GitHub Actions の両方で `mise run ci` を実行する
+- [x] GitHub Actions では `jdx/mise-action` を固定したバージョンまたはコミットで使用し、mise のツールキャッシュを有効にする
+- [x] macOS job では Homebrew、Linux job では apt などを用いて SDL2 と必要な開発ヘッダを明示的に導入する。OS パッケージは mise の管理対象にしない
+- [ ] 自作 fixture を使う通常 CI と、ローカル環境変数で公開テスト ROM を与えた opt-in 検証を分離する
+- [x] `mise.lock` を導入した場合はリポジトリにコミットし、CI で解決済みバージョンを再現する
+
+Crystal の公式 GitHub Actions ガイドは Crystal の導入方法の参考にするが、プロジェクト固有の検証入口は mise に統一する。
+
 ## 段階的な開発計画
 
 ### 0. 土台づくり

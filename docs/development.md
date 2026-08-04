@@ -6,13 +6,12 @@ macOS または Linux で [mise](https://mise.jdx.dev/) を導入してから、
 
 ```sh
 mise run setup
-mise run check
-mise run build
+mise run ci
 ```
 
 Crystal は mise が導入する。SDL2 は OS の開発ライブラリを使うため、macOS では `brew install sdl2`、Ubuntu では `sudo apt install libsdl2-dev` を一度だけ実行する。固定対象の LLVM は Crystal 1.18.2 公式配布物に同梱される版（15.0.7）、SDL2 は 2.32.70 であり、`mise.toml` の `vars` に記録する。
 
-`mise run sdl-smoke` はデスクトップセッションで SDL2 のウィンドウ作成を確認する。CI とコアの spec はヘッドレスで実行できる。
+`mise run ci` は整形チェック、headless spec、ビルドを実行する。整形を適用する場合は `mise run format-fix` を使う。`mise run sdl-smoke` はデスクトップセッションで SDL2 のウィンドウ作成を確認する。CI とコアの spec はヘッドレスで実行できる。
 
 ## コーディング規約
 

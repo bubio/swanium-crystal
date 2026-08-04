@@ -4,7 +4,7 @@ WonderSwan 系ハードウェアを Crystal で再実装する、ヘッドレス
 
 ```sh
 mise run setup
-mise run check
+mise run ci
 mise run build
 ./bin/swanium --version
 ```

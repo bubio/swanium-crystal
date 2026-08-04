@@ -8,25 +8,36 @@ llvm_version = "15.0.7"
 sdl2_version = "2.32.70"
 
 [tasks.format]
-description = "Format Crystal source and specs"
+description = "Check Crystal source and spec formatting"
+run = "crystal tool format --check src spec"
+
+[tasks.format-fix]
+description = "Apply Crystal formatting to source and specs"
 run = "crystal tool format src spec"
 
 [tasks.setup]
 description = "Install managed tools and verify the required SDL2 development library"
 run = "mise install && sdl2-config --version"
 
-[tasks.test]
+[tasks.spec]
 description = "Run the headless test suite"
 run = "crystal spec"
+
+[tasks.test]
+description = "Alias for the headless test suite"
+depends = ["spec"]
 
 [tasks.build]
 description = "Build the command-line application"
 run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium"
 
+[tasks.ci]
+description = "Run the complete CI verification suite"
+depends = ["format", "spec", "build"]
+
 [tasks.check]
-description = "Check formatting and run tests"
-depends = ["test"]
-run = "crystal tool format --check src spec"
+description = "Backward-compatible alias for the CI verification suite"
+depends = ["ci"]
 
 [tasks.sdl-smoke]
 description = "Create an SDL2 window briefly (requires a desktop session)"
