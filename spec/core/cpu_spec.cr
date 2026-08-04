@@ -229,4 +229,31 @@ describe Swanium::Core::Cpu do
     memory.read_u8(0x0021_u32).should eq(2_u8)
     cpu.registers.cx.should eq(0_u16)
   end
+
+  it "repeats STOSB and LODSB with the direction flag" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xF3, 0xAA, 0xF3, 0xAC])
+    memory.write_u8(0x0010_u32, 0x12_u8)
+    memory.write_u8(0x0011_u32, 0x34_u8)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x005A_u16
+    cpu.registers.di = 0x0021_u16
+    cpu.registers.cx = 2_u16
+    cpu.flags.direction = true
+
+    cpu.step(memory)
+    memory.read_u8(0x0021_u32).should eq(0x5A_u8)
+    memory.read_u8(0x0020_u32).should eq(0x5A_u8)
+    cpu.registers.di.should eq(0x001F_u16)
+    cpu.registers.cx.should eq(0_u16)
+
+    cpu.flags.direction = false
+    cpu.registers.si = 0x0010_u16
+    cpu.registers.cx = 2_u16
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x34_u8)
+    cpu.registers.si.should eq(0x0012_u16)
+    cpu.registers.cx.should eq(0_u16)
+  end
 end
