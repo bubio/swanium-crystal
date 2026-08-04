@@ -64,6 +64,7 @@ module Swanium
         @rom_bank0 = 0xFF_u8
         @rom_bank1 = 0xFF_u8
         @keys = 0_u16
+        @pending_wait_cycles = 0_u32
       end
 
       def read_u8(address : UInt32) : UInt8
@@ -94,6 +95,7 @@ module Swanium
         when 0xC2_u8          then @rom_bank0
         when 0xC3_u8          then @rom_bank1
         when 0xA2_u8, 0xA3_u8 then @ports[port] & 0x0F_u8
+        when 0xA0_u8          then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
         when 0xB0_u8
           @model == WonderSwanModel::Mono ? (@ports[port] & 0xF8_u8) | highest_pending_bit : @ports[port] & 0xF8_u8
         when 0xB4_u8
@@ -123,6 +125,8 @@ module Swanium
           @ports[port] = value
         when 0xA2_u8, 0xA3_u8
           @ports[port] = value & 0x0F_u8
+        when 0x40_u8..0x5F_u8
+          write_dma_io(port, value) if @model.color?
         when 0xA4_u8, 0xA5_u8, 0xA6_u8, 0xA7_u8
           @ports[port] = value
           @ports[port &+ 4_u8] = value
@@ -142,6 +146,12 @@ module Swanium
         else
           @ports[port] = value
         end
+      end
+
+      def consume_wait_cycles : UInt32
+        cycles = @pending_wait_cycles
+        @pending_wait_cycles = 0_u32
+        cycles
       end
 
       def request_interrupt(source : WonderSwanInterrupt) : Nil
@@ -202,6 +212,62 @@ module Swanium
         @work_ram[address.to_i]
       end
 
+      # Color GDMA performs its complete burst at the control-port write, and
+      # stalls the CPU for the transfer. It only writes internal RAM; SRAM
+      # sources abort the burst as on the hardware.
+      private def write_dma_io(port : UInt8, value : UInt8) : Nil
+        case port
+        when 0x40_u8, 0x44_u8, 0x46_u8
+          @ports[port] = value & 0xFE_u8
+        when 0x42_u8
+          @ports[port] = value & 0x0F_u8
+        when 0x43_u8, 0x49_u8, 0x4D_u8, 0x51_u8, 0x53_u8..0x5F_u8
+          # Reserved / read-only holes.
+        when 0x48_u8
+          @ports[port] = value
+          @pending_wait_cycles += execute_gdma
+        else
+          @ports[port] = value
+        end
+      end
+
+      private def execute_gdma : UInt32
+        return 0_u32 if (@ports[0x48] & 0x80_u8) == 0_u8
+
+        source = read_port_u16(0x40_u8).to_u32 | ((@ports[0x42] & 0x0F_u8).to_u32 << 16)
+        destination = read_port_u16(0x44_u8).to_u32
+        remaining = read_port_u16(0x46_u8)
+        if remaining == 0_u16
+          @ports[0x48] &= 0x7F_u8
+          return 0_u32
+        end
+
+        decrement = (@ports[0x48] & 0x40_u8) != 0_u8
+        transferred = 0_u32
+        while remaining > 0_u16
+          break if source >= 0x10000_u32 && source <= 0x1FFFF_u32
+
+          write_work_ram(destination & 0xFFFF_u32, read_u8(source))
+          if decrement
+            source &-= 1_u32
+            destination &-= 1_u32
+          else
+            source &+= 1_u32
+            destination &+= 1_u32
+          end
+          remaining &-= 1_u16
+          transferred += 1_u32
+        end
+
+        write_port_u16(0x40_u8, (source & 0xFFFF_u32).to_u16)
+        @ports[0x42] = ((source >> 16) & 0x0F_u32).to_u8
+        write_port_u16(0x44_u8, (destination & 0xFFFF_u32).to_u16)
+        write_port_u16(0x46_u8, remaining)
+        @ports[0x48] &= 0x7F_u8
+        request_interrupt(WonderSwanInterrupt::DmaComplete)
+        transferred == 0_u32 ? 0_u32 : 5_u32 + transferred
+      end
+
       private def write_work_ram(address : UInt32, value : UInt8) : Nil
         return if address > 0x03FFF_u32 && !@model.color?
         @work_ram[address.to_i] = value
@@ -237,6 +303,11 @@ module Swanium
       end
 
       private def write_counter(port : UInt8, value : UInt16) : Nil
+        @ports[port] = (value & 0x00FF_u16).to_u8
+        @ports[port &+ 1_u8] = (value >> 8).to_u8
+      end
+
+      private def write_port_u16(port : UInt8, value : UInt16) : Nil
         @ports[port] = (value & 0x00FF_u16).to_u8
         @ports[port &+ 1_u8] = (value >> 8).to_u8
       end

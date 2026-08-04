@@ -85,6 +85,18 @@ describe Swanium::Core::Cpu do
     cpu.halted.should be_true
   end
 
+  it "fetches both immediate words before applying a far jump" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xEA, 0x34, 0x12, 0x78, 0x56])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+
+    cpu.step(memory)
+
+    cpu.registers.cs.should eq(0x5678_u16)
+    cpu.registers.ip.should eq(0x1234_u16)
+  end
+
   it "takes conditional branches" do
     memory = Swanium::Core::FlatMemory.new
     # JE +2 ; HLT ; HLT
@@ -95,6 +107,17 @@ describe Swanium::Core::Cpu do
 
     cpu.step(memory).should eq(5_u32)
     cpu.registers.ip.should eq(0x0004_u16)
+  end
+
+  it "uses the address after its immediate byte as the short jump base" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xEB, 0x00, 0x90])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+
+    cpu.step(memory)
+
+    cpu.registers.ip.should eq(0x0002_u16)
   end
 
   it "pushes state and loads a real-mode vector when servicing an interrupt" do

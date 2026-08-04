@@ -60,6 +60,19 @@ describe Swanium::Core::Machine do
     machine.cpu.registers.ip.should eq(0x1234_u16)
   end
 
+  it "runs a WonderSwan frame from deterministic emulated cycles" do
+    bus = Swanium::Core::WonderSwanBus.new
+    0x10000.times { |address| bus.write_u8(address.to_u32, 0x90_u8) }
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+
+    machine.run_wonder_swan_frame(bus, Swanium::Core::WonderSwanKey::A)
+
+    machine.scanline.should eq(0_u16)
+    machine.cycles.should eq(Swanium::Core::Machine::CYCLES_PER_FRAME)
+    bus.keys.should eq(Swanium::Core::WonderSwanKey::A)
+  end
+
   it "delays a pending maskable interrupt for one instruction after STI" do
     bus = Swanium::Core::WonderSwanBus.new
     bus.write_u8(0_u32, 0xFB_u8)

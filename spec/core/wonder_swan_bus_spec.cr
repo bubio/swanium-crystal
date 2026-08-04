@@ -88,4 +88,25 @@ describe Swanium::Core::WonderSwanBus do
     color.request_interrupt(Swanium::Core::WonderSwanInterrupt::HBlankTimer)
     color.read_io(0xB0_u8).should eq(0x40_u8)
   end
+
+  it "reports the Color hardware flag and runs synchronous GDMA into work RAM" do
+    rom = Bytes.new(0x10000, 0_u8)
+    rom[0] = 0xAB_u8
+    rom[1] = 0xCD_u8
+    bus = Swanium::Core::WonderSwanBus.new(rom, model: Swanium::Core::WonderSwanModel::Color)
+    bus.read_io(0xA0_u8).should eq(0x87_u8)
+    bus.write_io(0x40_u8, 0_u8)
+    bus.write_io(0x41_u8, 0_u8)
+    bus.write_io(0x42_u8, 0x0F_u8)
+    bus.write_io(0x44_u8, 0x10_u8)
+    bus.write_io(0x45_u8, 0_u8)
+    bus.write_io(0x46_u8, 2_u8)
+    bus.write_io(0x47_u8, 0_u8)
+    bus.write_io(0x48_u8, 0x80_u8)
+
+    bus.read_u8(0x10_u32).should eq(0xAB_u8)
+    bus.read_u8(0x11_u32).should eq(0xCD_u8)
+    bus.consume_wait_cycles.should eq(7_u32)
+    bus.consume_wait_cycles.should eq(0_u32)
+  end
 end

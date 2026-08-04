@@ -27,6 +27,13 @@ module Swanium
 
       def write_io(port : UInt8, value : UInt8) : Nil
       end
+
+      # Some hardware I/O operations synchronously stall the V30. A bus
+      # accumulates those costs while handling an instruction, and the CPU
+      # consumes them before reporting that instruction's total cycle count.
+      def consume_wait_cycles : UInt32
+        0_u32
+      end
     end
 
     class FlatMemory < MemoryBus

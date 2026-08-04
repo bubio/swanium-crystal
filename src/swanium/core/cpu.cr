@@ -134,7 +134,7 @@ module Swanium
         code_segment = @registers.cs
         instruction_pointer = @registers.ip
         opcode = fetch_u8(bus)
-        cycles = execute(opcode, bus)
+        cycles = execute(opcode, bus) + bus.consume_wait_cycles
         @last_trace = InstructionTrace.new(code_segment, instruction_pointer, opcode, cycles)
         @segment_override = nil
         @repeat_prefix = nil
@@ -508,14 +508,18 @@ module Swanium
           bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
           4_u32
         when 0xE9_u8
-          @registers.ip &+= fetch_u16(bus)
+          relative = fetch_u16(bus)
+          @registers.ip &+= relative
           4_u32
         when 0xEA_u8
-          @registers.ip = fetch_u16(bus)
-          @registers.cs = fetch_u16(bus)
+          new_ip = fetch_u16(bus)
+          new_cs = fetch_u16(bus)
+          @registers.ip = new_ip
+          @registers.cs = new_cs
           7_u32
         when 0xEB_u8
-          @registers.ip &+= signed_byte(fetch_u8(bus))
+          relative = signed_byte(fetch_u8(bus))
+          @registers.ip &+= relative
           4_u32
         when 0xEC_u8
           @registers.set_reg8(0_u8, bus.read_io(@registers.reg8(2_u8)))

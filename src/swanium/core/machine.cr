@@ -11,6 +11,7 @@ module Swanium
       CYCLES_PER_SCANLINE = 256_u32
       VISIBLE_SCANLINES   = 144_u16
       SCANLINES_PER_FRAME = 159_u16
+      CYCLES_PER_FRAME    = CYCLES_PER_SCANLINE.to_u64 * SCANLINES_PER_FRAME
 
       getter cycles : UInt64
       getter cpu : Cpu
@@ -61,6 +62,18 @@ module Swanium
         @cycles += cycles
         advance_wonder_swan_display(bus, cycles)
         cycles
+      end
+
+      # Run a complete 159-line WonderSwan video frame with one stable input
+      # snapshot. This is deliberately driven from emulated cycles rather than
+      # wall-clock time, so headless test ROMs observe the same input and timer
+      # schedule as a frontend would.
+      def run_wonder_swan_frame(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
+        bus.set_keys(keys)
+        target_cycles = @cycles + CYCLES_PER_FRAME
+        while @cycles < target_cycles
+          step_wonder_swan(bus)
+        end
       end
 
       private def advance_wonder_swan_display(bus : WonderSwanBus, cycles : UInt32) : Nil
