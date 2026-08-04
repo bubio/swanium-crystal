@@ -93,4 +93,41 @@ describe Swanium::Core::Machine do
     machine.cpu.registers.ip.should eq(0x7777_u16)
     machine.cpu.flags.interrupt.should be_false
   end
+
+  it "runs a headless program through an HBlank interrupt and back to HLT" do
+    # STI ; HLT ; HLT
+    # Handler at 0000:0100: MOV byte [0200],5A ; ACK HBlank ; IRET
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_u8(0_u32, 0xFB_u8)
+    bus.write_u8(1_u32, 0xF4_u8)
+    bus.write_u8(2_u32, 0xF4_u8)
+    bus.write_u8(0x100_u32, 0xC6_u8)
+    bus.write_u8(0x101_u32, 0x06_u8)
+    bus.write_u8(0x102_u32, 0x00_u8)
+    bus.write_u8(0x103_u32, 0x02_u8)
+    bus.write_u8(0x104_u32, 0x5A_u8)
+    bus.write_u8(0x105_u32, 0xB0_u8)
+    bus.write_u8(0x106_u32, 0x80_u8)
+    bus.write_u8(0x107_u32, 0xE6_u8)
+    bus.write_u8(0x108_u32, 0xB6_u8)
+    bus.write_u8(0x109_u32, 0xCF_u8)
+    bus.write_io(0xB0_u8, 0x40_u8)
+    bus.write_io(0xB2_u8, 0x80_u8)
+    bus.write_io(0xA4_u8, 1_u8)
+    bus.write_io(0xA2_u8, 0x01_u8)
+    bus.write_u16(0x11C_u32, 0x0100_u16)
+    bus.write_u16(0x11E_u32, 0_u16)
+
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+    machine.cpu.registers.ss = 0_u16
+    machine.cpu.registers.sp = 0x3FFE_u16
+
+    machine.run_wonder_swan_frame(bus)
+
+    bus.read_u8(0x0200_u32).should eq(0x5A_u8)
+    machine.cpu.halted.should be_true
+    machine.cpu.registers.cs.should eq(0_u16)
+    machine.cpu.registers.ip.should eq(3_u16)
+  end
 end
