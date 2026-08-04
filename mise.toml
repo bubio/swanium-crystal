@@ -29,7 +29,7 @@ depends = ["spec"]
 
 [tasks.build]
 description = "Build the command-line application"
-run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium"
+run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium-crystal"
 
 [tasks.ci]
 description = "Run the complete CI verification suite"
