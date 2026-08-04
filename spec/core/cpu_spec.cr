@@ -936,4 +936,77 @@ describe Swanium::Core::Cpu do
     cpu.step(memory)
     cpu.flags.direction.should be_true
   end
+
+  it "matches Rust jz_taken_when_zero_flag_set" do
+    cpu, memory = cpu_with(Bytes[0x74, 0x03])
+    cpu.flags.zero = true
+    cpu.step(memory)
+    cpu.registers.ip.should eq(5_u16)
+  end
+
+  it "matches Rust call_pushes_return_address_and_jumps" do
+    cpu, memory = cpu_with(Bytes[0xE8, 0x10, 0x00])
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0013_u16)
+    cpu.registers.sp.should eq(0xFFFC_u16)
+    memory.read_u16(0xFFFC_u32).should eq(3_u16)
+  end
+
+  it "matches Rust ret_pops_return_address" do
+    cpu, memory = cpu_with(Bytes[0xE8, 0x10, 0x00])
+    memory.write_u8(0x0013_u32, 0xC3_u8)
+    cpu.step(memory)
+    cpu.step(memory)
+    cpu.registers.ip.should eq(3_u16)
+    cpu.registers.sp.should eq(0xFFFE_u16)
+  end
+
+  it "matches Rust wscputest_one_byte_undefined_opcodes_are_nops" do
+    [0x0F_u8, 0x63_u8, 0x64_u8, 0x65_u8, 0x66_u8, 0x67_u8].each do |opcode|
+      cpu, memory = cpu_with(Bytes[opcode])
+      cpu.registers.ax = 0x1234_u16
+      cpu.flags.carry = true
+      cpu.step(memory)
+      cpu.registers.ip.should eq(1_u16)
+      cpu.registers.ax.should eq(0x1234_u16)
+      cpu.registers.cs.should eq(0_u16)
+      cpu.flags.carry.should be_true
+      cpu.fault_opcode.should be_nil
+    end
+  end
+
+  it "matches Rust every_primary_opcode_executes_without_panicking" do
+    256.times do |opcode|
+      cpu, memory = cpu_with(Bytes[opcode.to_u8, 0, 0, 0, 0, 0, 0, 0])
+      cpu.step(memory)
+    end
+  end
+
+  it "matches Rust every_primary_opcode_has_a_non_faulting_representative_encoding" do
+    256.times do |opcode|
+      cpu, memory = cpu_with(Bytes[opcode.to_u8, 0, 0, 0, 0, 0, 0, 0])
+      cpu.step(memory)
+      cpu.fault_opcode.should be_nil, "opcode 0x%02X faulted" % opcode
+    end
+  end
+
+  it "matches Rust handle_irq_dispatches_and_reports_acknowledge_cost" do
+    cpu, memory = cpu_with(Bytes[0])
+    memory.write_u16(0x80_u32, 0x5678_u16)
+    memory.write_u16(0x82_u32, 0x1234_u16)
+    cpu.reset(0x1000_u16, 0x2000_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0xFFFE_u16
+    cpu.flags.interrupt = true
+    cpu.service_interrupt(memory, 0x20_u8).should eq(10_u32)
+    cpu.registers.cs.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x5678_u16)
+    cpu.flags.interrupt.should be_false
+    cpu.registers.sp.should eq(0xFFF8_u16)
+  end
+
+  it "matches Rust software_int_reports_full_cost_without_double_counting_acknowledge" do
+    cpu, memory = cpu_with(Bytes[0xCD, 0x21])
+    cpu.step(memory).should eq(10_u32)
+  end
 end
