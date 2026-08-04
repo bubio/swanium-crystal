@@ -123,4 +123,43 @@ describe Swanium::Core::Cpu do
     cpu.registers.ip.should eq(0_u16)
     cpu.last_trace.should be_nil
   end
+
+  it "executes LOOP, direct memory MOV, and flag transfer instructions" do
+    memory = Swanium::Core::FlatMemory.new
+    # MOV CX,2 ; LOOP -2 ; MOV AL,[0x10] ; STC ; LAHF
+    memory.load(0_u32, Bytes[0xB9, 0x02, 0x00, 0xE2, 0xFE, 0xA0, 0x10, 0x00, 0xF9, 0x9F])
+    memory.write_u8(0x0010_u32, 0x5A_u8)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+
+    cpu.step(memory)
+    cpu.step(memory)
+    cpu.registers.cx.should eq(1_u16)
+    cpu.registers.ip.should eq(0x0003_u16)
+    cpu.registers.cx = 0_u16
+    cpu.registers.ip = 0x0005_u16
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x5A_u8)
+    cpu.step(memory)
+    cpu.step(memory)
+    cpu.flags.carry.should be_true
+    (cpu.registers.reg8(4_u8) & 0x01_u8).should eq(0x01_u8)
+  end
+
+  it "uses TEST and XCHG without corrupting the operand contract" do
+    memory = Swanium::Core::FlatMemory.new
+    # XCHG AX,BX ; TEST AL,0x0F
+    memory.load(0_u32, Bytes[0x93, 0xA8, 0x0F])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x1200_u16
+    cpu.registers.bx = 0x00F0_u16
+
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x00F0_u16)
+    cpu.registers.bx.should eq(0x1200_u16)
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x00F0_u16)
+    cpu.flags.zero.should be_true
+  end
 end

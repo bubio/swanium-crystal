@@ -170,6 +170,28 @@ module Swanium
           else
             1_u32
           end
+        when 0x84_u8
+          mod_rm = decode_mod_rm(bus)
+          logic8(read_operand8(bus, mod_rm.operand) & @registers.reg8(mod_rm.reg))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        when 0x85_u8
+          mod_rm = decode_mod_rm(bus)
+          logic16(read_operand16(bus, mod_rm.operand) & @registers.reg16(mod_rm.reg))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        when 0x86_u8
+          mod_rm = decode_mod_rm(bus)
+          left = read_operand8(bus, mod_rm.operand)
+          right = @registers.reg8(mod_rm.reg)
+          write_operand8(bus, mod_rm.operand, right)
+          @registers.set_reg8(mod_rm.reg, left)
+          cycles(mod_rm.operand, 3_u32, 5_u32)
+        when 0x87_u8
+          mod_rm = decode_mod_rm(bus)
+          left = read_operand16(bus, mod_rm.operand)
+          right = @registers.reg16(mod_rm.reg)
+          write_operand16(bus, mod_rm.operand, right)
+          @registers.set_reg16(mod_rm.reg, left)
+          cycles(mod_rm.operand, 3_u32, 5_u32)
         when 0x80_u8, 0x82_u8
           execute_group1_8(bus)
         when 0x81_u8
@@ -194,6 +216,48 @@ module Swanium
           cycles(mod_rm.operand, 1_u32, 1_u32)
         when 0x90_u8
           1_u32
+        when 0x91_u8..0x97_u8
+          index = opcode & 0x07_u8
+          value = @registers.reg16(index)
+          @registers.set_reg16(index, @registers.ax)
+          @registers.ax = value
+          3_u32
+        when 0x98_u8
+          @registers.ax = @registers.reg8(0_u8).bit(7) == 1 ? (0xFF00_u16 | @registers.reg8(0_u8).to_u16) : @registers.reg8(0_u8).to_u16
+          1_u32
+        when 0x99_u8
+          @registers.dx = @registers.ax.bit(15) == 1 ? 0xFFFF_u16 : 0_u16
+          1_u32
+        when 0x9C_u8
+          push16(bus, @flags.to_u16)
+          2_u32
+        when 0x9D_u8
+          @flags = Flags.from_u16(pop16(bus))
+          3_u32
+        when 0x9E_u8
+          @flags = Flags.from_u16((@flags.to_u16 & 0xFF00_u16) | @registers.reg8(4_u8).to_u16)
+          4_u32
+        when 0x9F_u8
+          @registers.set_reg8(4_u8, (@flags.to_u16 & 0x00FF_u16).to_u8)
+          2_u32
+        when 0xA0_u8
+          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, fetch_u16(bus))))
+          1_u32
+        when 0xA1_u8
+          @registers.ax = bus.read_u16(Core.linear_address(@registers.ds, fetch_u16(bus)))
+          1_u32
+        when 0xA2_u8
+          bus.write_u8(Core.linear_address(@registers.ds, fetch_u16(bus)), @registers.reg8(0_u8))
+          1_u32
+        when 0xA3_u8
+          bus.write_u16(Core.linear_address(@registers.ds, fetch_u16(bus)), @registers.ax)
+          1_u32
+        when 0xA8_u8
+          logic8(@registers.reg8(0_u8) & fetch_u8(bus))
+          1_u32
+        when 0xA9_u8
+          logic16(@registers.ax & fetch_u16(bus))
+          1_u32
         when 0xB0_u8..0xB7_u8
           @registers.set_reg8(opcode & 0x07_u8, fetch_u8(bus))
           1_u32
@@ -216,6 +280,28 @@ module Swanium
           push16(bus, @registers.ip)
           @registers.ip &+= relative
           5_u32
+        when 0xE0_u8..0xE2_u8
+          relative = signed_byte(fetch_u8(bus))
+          @registers.cx &-= 1_u16
+          repeat = case opcode
+                   when 0xE0_u8 then @registers.cx != 0_u16 && !@flags.zero
+                   when 0xE1_u8 then @registers.cx != 0_u16 && @flags.zero
+                   else              @registers.cx != 0_u16
+                   end
+          if repeat
+            @registers.ip &+= relative
+            6_u32
+          else
+            2_u32
+          end
+        when 0xE3_u8
+          relative = signed_byte(fetch_u8(bus))
+          if @registers.cx == 0_u16
+            @registers.ip &+= relative
+            4_u32
+          else
+            1_u32
+          end
         when 0xE9_u8
           @registers.ip &+= fetch_u16(bus)
           4_u32
@@ -224,6 +310,27 @@ module Swanium
           4_u32
         when 0xF4_u8
           @halted = true
+          1_u32
+        when 0xF5_u8
+          @flags.carry = !@flags.carry
+          1_u32
+        when 0xF8_u8
+          @flags.carry = false
+          1_u32
+        when 0xF9_u8
+          @flags.carry = true
+          1_u32
+        when 0xFA_u8
+          @flags.interrupt = false
+          1_u32
+        when 0xFB_u8
+          @flags.interrupt = true
+          1_u32
+        when 0xFC_u8
+          @flags.direction = false
+          1_u32
+        when 0xFD_u8
+          @flags.direction = true
           1_u32
         else
           @fault_opcode = opcode
