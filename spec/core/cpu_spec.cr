@@ -869,4 +869,71 @@ describe Swanium::Core::Cpu do
     cpu.registers.cx.should eq(0xBEEF_u16)
     cpu.registers.sp.should eq(0xFFFE_u16)
   end
+
+  # One-to-one counterparts of crates/core/src/cpu/tests/ctrl_flow.rs.
+  it "matches Rust reset_initializes_bootstrap_stack_pointer" do
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0x1234_u16, 0x5678_u16)
+
+    cpu.registers.cs.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x5678_u16)
+    cpu.registers.sp.should eq(0x2000_u16)
+  end
+
+  it "matches Rust jmp_short_advances_ip_by_signed_offset" do
+    cpu, memory = cpu_with(Bytes[0xEB, 0x04])
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0006_u16)
+  end
+
+  it "matches Rust jmp_short_negative_offset_wraps_backward" do
+    cpu, memory = cpu_with(Bytes[0xEB, 0xFC])
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0xFFFE_u16)
+  end
+
+  it "matches Rust jz_not_taken_when_zero_flag_clear" do
+    cpu, memory = cpu_with(Bytes[0x74, 0x04])
+    cpu.flags.zero = false
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0002_u16)
+  end
+
+  it "matches Rust jl_uses_sign_xor_overflow" do
+    cpu, memory = cpu_with(Bytes[0x7C, 0x04])
+    cpu.flags.sign = true
+    cpu.flags.overflow = false
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0006_u16)
+  end
+
+  it "matches Rust hlt_sets_halted_and_subsequent_steps_are_idempotent" do
+    cpu, memory = cpu_with(Bytes[0xF4])
+    cpu.step(memory).should eq(1_u32)
+    cpu.halted.should be_true
+    cpu.registers.ip.should eq(1_u16)
+
+    cpu.step(memory).should eq(1_u32)
+    cpu.registers.ip.should eq(1_u16)
+  end
+
+  it "matches Rust flag_instructions_clc_stc_cli_sti_cld_std" do
+    cpu, memory = cpu_with(Bytes[0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD])
+    cpu.flags.carry = true
+    cpu.flags.interrupt = true
+    cpu.flags.direction = true
+
+    cpu.step(memory)
+    cpu.flags.carry.should be_false
+    cpu.step(memory)
+    cpu.flags.carry.should be_true
+    cpu.step(memory)
+    cpu.flags.interrupt.should be_false
+    cpu.step(memory)
+    cpu.flags.interrupt.should be_true
+    cpu.step(memory)
+    cpu.flags.direction.should be_false
+    cpu.step(memory)
+    cpu.flags.direction.should be_true
+  end
 end
