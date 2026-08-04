@@ -264,9 +264,9 @@ module Swanium
         when 0x80_u8, 0x82_u8
           execute_group1_8(bus)
         when 0x81_u8
-          execute_group1_16(bus, fetch_u16(bus))
+          execute_group1_16(bus, false)
         when 0x83_u8
-          execute_group1_16(bus, signed_byte(fetch_u8(bus)))
+          execute_group1_16(bus, true)
         when 0x88_u8
           mod_rm = decode_mod_rm(bus)
           write_operand8(bus, mod_rm.operand, @registers.reg8(mod_rm.reg))
@@ -332,7 +332,8 @@ module Swanium
           @registers.cs = new_cs
           10_u32
         when 0xA0_u8
-          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, fetch_u16(bus))))
+          segment = @segment_override || @registers.ds
+          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(segment, fetch_u16(bus))))
           1_u32
         when 0xA4_u8
           execute_string(bus, opcode)
@@ -343,13 +344,16 @@ module Swanium
         when 0xAB_u8, 0xAC_u8, 0xAD_u8, 0xAE_u8, 0xAF_u8
           execute_string(bus, opcode)
         when 0xA1_u8
-          @registers.ax = bus.read_u16(Core.linear_address(@registers.ds, fetch_u16(bus)))
+          segment = @segment_override || @registers.ds
+          @registers.ax = bus.read_u16(Core.linear_address(segment, fetch_u16(bus)))
           1_u32
         when 0xA2_u8
-          bus.write_u8(Core.linear_address(@registers.ds, fetch_u16(bus)), @registers.reg8(0_u8))
+          segment = @segment_override || @registers.ds
+          bus.write_u8(Core.linear_address(segment, fetch_u16(bus)), @registers.reg8(0_u8))
           1_u32
         when 0xA3_u8
-          bus.write_u16(Core.linear_address(@registers.ds, fetch_u16(bus)), @registers.ax)
+          segment = @segment_override || @registers.ds
+          bus.write_u16(Core.linear_address(segment, fetch_u16(bus)), @registers.ax)
           1_u32
         when 0xA8_u8
           logic8(@registers.reg8(0_u8) & fetch_u8(bus))
@@ -591,8 +595,9 @@ module Swanium
         cycles(mod_rm.operand, 1_u32, 3_u32)
       end
 
-      private def execute_group1_16(bus : MemoryBus, immediate : UInt16) : UInt32
+      private def execute_group1_16(bus : MemoryBus, sign_extend : Bool) : UInt32
         mod_rm = decode_mod_rm(bus)
+        immediate = sign_extend ? signed_byte(fetch_u8(bus)) : fetch_u16(bus)
         operation = alu_operation(mod_rm.reg)
         result = alu16(operation, read_operand16(bus, mod_rm.operand), immediate)
         write_operand16(bus, mod_rm.operand, result) unless operation.compare?

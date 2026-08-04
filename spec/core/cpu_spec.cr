@@ -592,4 +592,24 @@ describe Swanium::Core::Cpu do
     cpu.registers.si.should eq(0x5678_u16)
     cpu.registers.ds.should eq(0x9ABC_u16)
   end
+
+  it "decodes group-one immediates after ModRM and applies moffs overrides" do
+    memory = Swanium::Core::FlatMemory.new
+    # ADD AX,0x1234 ; SUB BX,-1 ; ES:MOV AL,[0x10]
+    memory.load(0_u32, Bytes[0x81, 0xC0, 0x34, 0x12, 0x83, 0xEB, 0xFF, 0x26, 0xA0, 0x10, 0])
+    memory.write_u8(0x0110_u32, 0xAA_u8)
+    memory.write_u8(0x0210_u32, 0xBB_u8)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ds = 0x0010_u16
+    cpu.registers.es = 0x0020_u16
+
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x1234_u16)
+    cpu.registers.bx = 1_u16
+    cpu.step(memory)
+    cpu.registers.bx.should eq(2_u16)
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0xBB_u8)
+  end
 end
