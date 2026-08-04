@@ -217,6 +217,10 @@ module Swanium
           execute_pusha(bus)
         when 0x61_u8
           execute_popa(bus)
+        when 0x62_u8
+          execute_bound(bus)
+        when 0x6C_u8, 0x6D_u8, 0x6E_u8, 0x6F_u8
+          execute_string(bus, opcode)
         when 0x68_u8
           push16(bus, fetch_u16(bus))
           1_u32
@@ -287,6 +291,8 @@ module Swanium
           mod_rm = decode_mod_rm(bus)
           @registers.set_segment(mod_rm.reg, read_operand16(bus, mod_rm.operand))
           cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0x8F_u8
+          execute_pop_rm16(bus)
         when 0x90_u8
           1_u32
         when 0x91_u8..0x97_u8
@@ -490,6 +496,8 @@ module Swanium
           execute_group3_8(bus)
         when 0xF7_u8
           execute_group3_16(bus)
+        when 0xFE_u8
+          execute_group4(bus)
         when 0xFF_u8
           execute_group5(bus)
         when 0xF4_u8
@@ -857,6 +865,45 @@ module Swanium
         8_u32
       end
 
+      private def execute_bound(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        unless address = mod_rm.operand.memory?
+          @fault_opcode = 0x62_u8
+          @halted = true
+          return 1_u32
+        end
+        index = signed16(@registers.reg16(mod_rm.reg))
+        lower = signed16(bus.read_u16(address))
+        upper = signed16(bus.read_u16(address &+ 2_u32))
+        service_interrupt(bus, 5_u8) if index < lower || index > upper
+        13_u32
+      end
+
+      private def execute_pop_rm16(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        return 1_u32 unless mod_rm.reg == 0_u8
+
+        write_operand16(bus, mod_rm.operand, pop16(bus))
+        cycles(mod_rm.operand, 1_u32, 3_u32)
+      end
+
+      private def execute_group4(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        case mod_rm.reg
+        when 0_u8
+          write_operand8(bus, mod_rm.operand, increment8(read_operand8(bus, mod_rm.operand)))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 1_u8
+          write_operand8(bus, mod_rm.operand, decrement8(read_operand8(bus, mod_rm.operand)))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 6_u8
+          push16(bus, read_operand16(bus, mod_rm.operand))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        else
+          1_u32
+        end
+      end
+
       private def execute_imul_immediate16(bus : MemoryBus) : UInt32
         mod_rm = decode_mod_rm(bus)
         immediate = fetch_u16(bus)
@@ -1205,11 +1252,27 @@ module Swanium
         result
       end
 
+      private def increment8(value : UInt8) : UInt8
+        result = value &+ 1_u8
+        @flags.auxiliary_carry = (value & 0x0F_u8) == 0x0F_u8
+        @flags.overflow = value == 0x7F_u8
+        set_zsp8(result)
+        result
+      end
+
       private def decrement16(value : UInt16) : UInt16
         result = value &- 1_u16
         @flags.auxiliary_carry = (value & 0x000F_u16) == 0_u16
         @flags.overflow = value == 0x8000_u16
         set_zsp16(result)
+        result
+      end
+
+      private def decrement8(value : UInt8) : UInt8
+        result = value &- 1_u8
+        @flags.auxiliary_carry = (value & 0x0F_u8) == 0_u8
+        @flags.overflow = value == 0x80_u8
+        set_zsp8(result)
         result
       end
 
@@ -1277,6 +1340,23 @@ module Swanium
         destination_address = Core.linear_address(@registers.es, @registers.di)
 
         case opcode
+        when 0x6C_u8
+          bus.write_u8(destination_address, bus.read_io(@registers.reg8(2_u8)))
+          @registers.di &+= delta
+        when 0x6D_u8
+          port = @registers.reg8(2_u8)
+          value = bus.read_io(port).to_u16 | (bus.read_io(port &+ 1_u8).to_u16 << 8)
+          bus.write_u16(destination_address, value)
+          @registers.di &+= delta
+        when 0x6E_u8
+          bus.write_io(@registers.reg8(2_u8), bus.read_u8(source_address))
+          @registers.si &+= delta
+        when 0x6F_u8
+          port = @registers.reg8(2_u8)
+          value = bus.read_u16(source_address)
+          bus.write_io(port, (value & 0x00FF_u16).to_u8)
+          bus.write_io(port &+ 1_u8, (value >> 8).to_u8)
+          @registers.si &+= delta
         when 0xA4_u8
           bus.write_u8(destination_address, bus.read_u8(source_address))
           @registers.si &+= delta; @registers.di &+= delta
@@ -1312,6 +1392,8 @@ module Swanium
 
       private def string_cycles(opcode : UInt8) : UInt32
         case opcode
+        when 0x6C_u8, 0x6D_u8                   then 6_u32
+        when 0x6E_u8, 0x6F_u8                   then 7_u32
         when 0xA4_u8, 0xA5_u8                   then 5_u32
         when 0xA6_u8, 0xA7_u8                   then 6_u32
         when 0xAA_u8, 0xAB_u8, 0xAC_u8, 0xAD_u8 then 3_u32

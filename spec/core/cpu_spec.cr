@@ -531,4 +531,39 @@ describe Swanium::Core::Cpu do
     cpu.registers.bp.should eq(0xBEEF_u16)
     cpu.registers.sp.should eq(0x0100_u16)
   end
+
+  it "executes BOUND, V30 FE extensions, POP r/m, and string I/O" do
+    memory = IoMemory.new
+    memory.load(0_u32, Bytes[0x62, 0x06, 0x00, 0x02, 0xFE, 0xC0, 0xFE, 0xF0, 0x8F, 0xC3, 0x6C, 0x6E])
+    memory.write_u16(0x0200_u32, 0_u16)
+    memory.write_u16(0x0202_u32, 10_u16)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0xFFFE_u16
+    cpu.registers.ax = 5_u16
+
+    cpu.step(memory)
+    cpu.registers.ip.should eq(4_u16)
+    cpu.registers.ax = 0x007F_u16
+    cpu.flags.carry = true
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x80_u8)
+    cpu.flags.carry.should be_true
+    cpu.step(memory)
+    memory.read_u16(0xFFFC_u32).should eq(0x0080_u16)
+    cpu.step(memory)
+    cpu.registers.bx.should eq(0x0080_u16)
+
+    memory.set_port(0x10_u8, 0xAB_u8)
+    cpu.registers.dx = 0x0010_u16
+    cpu.registers.es = 0_u16
+    cpu.registers.di = 0x0400_u16
+    cpu.step(memory)
+    memory.read_u8(0x0400_u32).should eq(0xAB_u8)
+    cpu.registers.ds = 0_u16
+    cpu.registers.si = 0x0400_u16
+    cpu.step(memory)
+    memory.writes.last.should eq({0x10_u8, 0xAB_u8})
+  end
 end
