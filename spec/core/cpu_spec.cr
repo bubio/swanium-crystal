@@ -798,4 +798,75 @@ describe Swanium::Core::Cpu do
     cpu.registers.bx.should eq(0x0015_u16)
     cpu.registers.ax.should eq(0x0010_u16)
   end
+
+  # One-to-one counterparts of crates/core/src/cpu/tests/mov_stack.rs.
+  it "matches Rust mov_reg16_imm16" do
+    cpu, memory = cpu_with(Bytes[0xB9, 0x34, 0x12])
+    cpu.step(memory).should eq(1_u32)
+    cpu.registers.cx.should eq(0x1234_u16)
+  end
+
+  it "matches Rust mov_reg8_imm8" do
+    cpu, memory = cpu_with(Bytes[0xB4, 0x42])
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x4200_u16)
+  end
+
+  it "matches Rust mov_memory_bx_si_addressing" do
+    cpu, memory = cpu_with(Bytes[0x88, 0x00])
+    cpu.registers.ax = 0x00AB_u16
+    cpu.registers.bx = 0x0010_u16
+    cpu.registers.si = 0x0002_u16
+    cpu.step(memory)
+    memory.read_u8(0x0012_u32).should eq(0xAB_u8)
+  end
+
+  it "matches Rust mov_memory_direct_address_uses_ds" do
+    cpu, memory = cpu_with(Bytes[0x88, 0x06, 0x00, 0x01])
+    cpu.registers.ax = 0x007E_u16
+    cpu.step(memory)
+    memory.read_u8(0x0100_u32).should eq(0x7E_u8)
+  end
+
+  it "matches Rust mov_memory_bp_based_addressing_uses_ss_not_ds" do
+    cpu, memory = cpu_with(Bytes[0x88, 0x02])
+    cpu.registers.ax = 0x0099_u16
+    cpu.registers.bp = 0x0004_u16
+    cpu.registers.si = 0x0001_u16
+    cpu.registers.ss = 0x0010_u16
+    cpu.registers.ds = 0x0020_u16
+    cpu.step(memory)
+
+    memory.read_u8(0x0105_u32).should eq(0x99_u8)
+    memory.read_u8(0x0205_u32).should eq(0_u8)
+  end
+
+  it "matches Rust push_pop_round_trip" do
+    cpu, memory = cpu_with(Bytes[0x53])
+    cpu.registers.bx = 0xBEEF_u16
+    cpu.step(memory).should eq(1_u32)
+
+    cpu.registers.sp.should eq(0xFFFC_u16)
+    memory.read_u16(0xFFFC_u32).should eq(0xBEEF_u16)
+  end
+
+  it "matches Rust pop_restores_register_and_advances_stack_pointer" do
+    cpu, memory = cpu_with(Bytes[0x59])
+    cpu.registers.sp = 0xFFFC_u16
+    memory.write_u16(0xFFFC_u32, 0xCAFE_u16)
+    cpu.step(memory).should eq(1_u32)
+
+    cpu.registers.cx.should eq(0xCAFE_u16)
+    cpu.registers.sp.should eq(0xFFFE_u16)
+  end
+
+  it "matches Rust push_then_pop_round_trips_value" do
+    cpu, memory = cpu_with(Bytes[0x53, 0x59])
+    cpu.registers.bx = 0xBEEF_u16
+    cpu.step(memory)
+    cpu.step(memory)
+
+    cpu.registers.cx.should eq(0xBEEF_u16)
+    cpu.registers.sp.should eq(0xFFFE_u16)
+  end
 end
