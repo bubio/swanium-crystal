@@ -183,6 +183,8 @@ module Swanium
           @registers.es = pop16(bus); 1_u32
         when 0x0E_u8
           push16(bus, @registers.cs); 1_u32
+        when 0x0F_u8
+          1_u32
         when 0x16_u8
           push16(bus, @registers.ss); 1_u32
         when 0x17_u8
@@ -219,6 +221,8 @@ module Swanium
           execute_popa(bus)
         when 0x62_u8
           execute_bound(bus)
+        when 0x63_u8..0x67_u8
+          1_u32
         when 0x6C_u8, 0x6D_u8, 0x6E_u8, 0x6F_u8
           execute_string(bus, opcode)
         when 0x68_u8
@@ -437,6 +441,8 @@ module Swanium
           offset = @registers.bx &+ @registers.reg8(0_u8).to_u16
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, offset)))
           5_u32
+        when 0xD8_u8..0xDF_u8
+          consume_esc(bus)
         when 0xE8_u8
           relative = fetch_u16(bus)
           push16(bus, @registers.ip)
@@ -508,6 +514,10 @@ module Swanium
           execute_group3_8(bus)
         when 0xF7_u8
           execute_group3_16(bus)
+        when 0xF0_u8
+          execute(fetch_u8(bus), bus)
+        when 0xF1_u8
+          service_interrupt(bus, 1_u8)
         when 0xFE_u8
           execute_group4(bus)
         when 0xFF_u8
@@ -715,6 +725,10 @@ module Swanium
       private def execute_shift8_immediate(bus : MemoryBus) : UInt32
         mod_rm = decode_mod_rm(bus)
         count = fetch_u8(bus)
+        if mod_rm.reg == 6_u8
+          write_operand8(bus, mod_rm.operand, 0_u8)
+          return cycles(mod_rm.operand, 3_u32, 5_u32)
+        end
         result = shift8(shift_operation(mod_rm.reg), read_operand8(bus, mod_rm.operand), count)
         write_operand8(bus, mod_rm.operand, result)
         cycles(mod_rm.operand, 3_u32, 5_u32)
@@ -730,6 +744,10 @@ module Swanium
       private def execute_shift16_immediate(bus : MemoryBus) : UInt32
         mod_rm = decode_mod_rm(bus)
         count = fetch_u8(bus)
+        if mod_rm.reg == 6_u8
+          write_operand16(bus, mod_rm.operand, 0_u16)
+          return cycles(mod_rm.operand, 3_u32, 5_u32)
+        end
         result = shift16(shift_operation(mod_rm.reg), read_operand16(bus, mod_rm.operand), count)
         write_operand16(bus, mod_rm.operand, result)
         cycles(mod_rm.operand, 3_u32, 5_u32)
@@ -915,6 +933,22 @@ module Swanium
         else
           1_u32
         end
+      end
+
+      # The WonderSwan has no external x87. ESC still consumes its ModRM
+      # encoding so the following instruction is fetched at the correct IP.
+      private def consume_esc(bus : MemoryBus) : UInt32
+        byte = fetch_u8(bus)
+        mode = byte >> 6
+        rm = byte & 0x07_u8
+        if mode == 0_u8 && rm == 6_u8
+          fetch_u16(bus)
+        elsif mode == 1_u8
+          fetch_u8(bus)
+        elsif mode == 2_u8
+          fetch_u16(bus)
+        end
+        1_u32
       end
 
       private def execute_imul_immediate16(bus : MemoryBus) : UInt32

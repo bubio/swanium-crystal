@@ -97,11 +97,11 @@ describe Swanium::Core::Cpu do
     cpu.registers.ip.should eq(0x0004_u16)
 
     unsupported = Swanium::Core::FlatMemory.new
-    unsupported.write_u8(0_u32, 0x0F_u8)
+    unsupported.write_u8(0_u32, 0x9B_u8)
     cpu.reset(0_u16, 0_u16)
     cpu.step(unsupported)
     cpu.halted.should be_true
-    cpu.fault_opcode.should eq(0x0F_u8)
+    cpu.fault_opcode.should eq(0x9B_u8)
   end
 
   it "pushes state and loads a real-mode vector when servicing an interrupt" do
@@ -611,5 +611,30 @@ describe Swanium::Core::Cpu do
     cpu.registers.bx.should eq(2_u16)
     cpu.step(memory)
     cpu.registers.reg8(0_u8).should eq(0xBB_u8)
+  end
+
+  it "handles V30 compatibility opcodes and prefixes without desynchronizing IP" do
+    memory = Swanium::Core::FlatMemory.new
+    # 0F ; LOCK NOP ; ESC [disp16] ; C0 /6 AL,2 ; INT1
+    memory.load(0x0100_u32, Bytes[0x0F, 0xF0, 0x90, 0xD8, 0x06, 0x34, 0x12, 0xC0, 0xF0, 2, 0xF1])
+    memory.write_u16(4_u32, 0x2000_u16)
+    memory.write_u16(6_u32, 0x1000_u16)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0x0100_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0x4000_u16
+    cpu.registers.ax = 0x00FF_u16
+
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0101_u16)
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0103_u16)
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0107_u16)
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0_u8)
+    cpu.step(memory)
+    cpu.registers.cs.should eq(0x1000_u16)
+    cpu.registers.ip.should eq(0x2000_u16)
   end
 end
