@@ -637,4 +637,19 @@ describe Swanium::Core::Cpu do
     cpu.registers.cs.should eq(0x1000_u16)
     cpu.registers.ip.should eq(0x2000_u16)
   end
+
+  it "treats V30 FF group seven as a no-op" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xFF, 0xF8])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x55AA_u16
+    cpu.flags.carry = true
+
+    cpu.step(memory)
+    cpu.registers.ip.should eq(2_u16)
+    cpu.registers.ax.should eq(0x55AA_u16)
+    cpu.flags.carry.should be_true
+    cpu.halted.should be_false
+  end
 end

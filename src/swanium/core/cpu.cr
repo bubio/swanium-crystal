@@ -1005,7 +1005,8 @@ module Swanium
           push16(bus, read_operand16(bus, mod_rm.operand))
           cycles(mod_rm.operand, 1_u32, 2_u32)
         else
-          unsupported_group5
+          # V30 compatibility: FF /7 consumes ModRM but has no effect.
+          1_u32
         end
       end
 
