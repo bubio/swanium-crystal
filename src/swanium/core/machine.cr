@@ -8,14 +8,21 @@ module Swanium
     # Platform-independent owner for emulation state. Hardware components will be
     # added here without exposing SDL, filesystem, or wall-clock dependencies.
     class Machine
+      CYCLES_PER_SCANLINE = 256_u32
+      VISIBLE_SCANLINES   = 144_u16
+      SCANLINES_PER_FRAME = 159_u16
+
       getter cycles : UInt64
       getter cpu : Cpu
       getter interrupts : InterruptController
+      getter scanline : UInt16
 
       def initialize
         @cycles = 0_u64
         @cpu = Cpu.new
         @interrupts = InterruptController.new
+        @scanline_cycles = 0_u32
+        @scanline = 0_u16
       end
 
       def run_cycles(cycles : UInt32) : Nil
@@ -52,7 +59,20 @@ module Swanium
           end
         end
         @cycles += cycles
+        advance_wonder_swan_display(bus, cycles)
         cycles
+      end
+
+      private def advance_wonder_swan_display(bus : WonderSwanBus, cycles : UInt32) : Nil
+        @scanline_cycles += cycles
+        while @scanline_cycles >= CYCLES_PER_SCANLINE
+          @scanline_cycles -= CYCLES_PER_SCANLINE
+          bus.on_hblank
+          @scanline &+= 1_u16
+          @scanline = 0_u16 if @scanline == SCANLINES_PER_FRAME
+          bus.set_current_scanline(@scanline.to_u8)
+          bus.on_vblank if @scanline == VISIBLE_SCANLINES
+        end
       end
     end
   end

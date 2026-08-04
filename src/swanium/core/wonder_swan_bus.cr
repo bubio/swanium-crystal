@@ -157,6 +157,12 @@ module Swanium
         end
       end
 
+      # The display controller updates this once per 256-cycle scanline.
+      def set_current_scanline(line : UInt8) : Nil
+        @ports[0x02] = line
+        request_interrupt(WonderSwanInterrupt::ScanlineMatch) if line == @ports[0x03]
+      end
+
       private def read_work_ram(address : UInt32) : UInt8
         return OPEN_BUS if address > 0x03FFF_u32 && !@model.color?
         @work_ram[address.to_i]
