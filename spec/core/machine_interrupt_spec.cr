@@ -59,4 +59,25 @@ describe Swanium::Core::Machine do
     machine.step_wonder_swan(bus)
     machine.cpu.registers.ip.should eq(0x1234_u16)
   end
+
+  it "delays a pending maskable interrupt for one instruction after STI" do
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_u8(0_u32, 0xFB_u8)
+    bus.write_u8(1_u32, 0x90_u8)
+    bus.write_io(0xB0_u8, 0x40_u8)
+    bus.write_io(0xB2_u8, 0x80_u8)
+    bus.request_interrupt(Swanium::Core::WonderSwanInterrupt::HBlankTimer)
+    bus.write_u16(0x11C_u32, 0x7777_u16)
+    bus.write_u16(0x11E_u32, 0_u16)
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+    machine.cpu.registers.ss = 0_u16
+    machine.cpu.registers.sp = 0x3FFE_u16
+
+    machine.step_wonder_swan(bus)
+    machine.cpu.registers.ip.should eq(1_u16)
+    machine.step_wonder_swan(bus)
+    machine.cpu.registers.ip.should eq(0x7777_u16)
+    machine.cpu.flags.interrupt.should be_false
+  end
 end

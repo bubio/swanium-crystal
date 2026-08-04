@@ -87,6 +87,7 @@ module Swanium
         @last_trace = nil
         @segment_override = nil
         @repeat_prefix = nil
+        @interrupt_inhibit = 0_u8
       end
 
       def reset(code_segment : UInt16, instruction_pointer : UInt16) : Nil
@@ -100,6 +101,7 @@ module Swanium
         @last_trace = nil
         @segment_override = nil
         @repeat_prefix = nil
+        @interrupt_inhibit = 0_u8
       end
 
       def fetch_u8(bus : MemoryBus) : UInt8
@@ -107,6 +109,17 @@ module Swanium
         value = bus.read_u8(address)
         @registers.ip &+= 1_u16
         value
+      end
+
+      # Consumes the one-instruction maskable-interrupt delay following STI
+      # and SS loads. Called by the machine only at instruction boundaries.
+      def maskable_interrupt_allowed? : Bool
+        if @interrupt_inhibit > 0_u8
+          @interrupt_inhibit -= 1_u8
+          false
+        else
+          true
+        end
       end
 
       def fetch_u16(bus : MemoryBus) : UInt16
@@ -140,6 +153,7 @@ module Swanium
         @last_trace = nil
         @segment_override = nil
         @repeat_prefix = nil
+        @interrupt_inhibit = 0_u8
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.
@@ -188,7 +202,9 @@ module Swanium
         when 0x16_u8
           push16(bus, @registers.ss); 1_u32
         when 0x17_u8
-          @registers.ss = pop16(bus); 1_u32
+          @registers.ss = pop16(bus)
+          @interrupt_inhibit = 1_u8
+          1_u32
         when 0x1E_u8
           push16(bus, @registers.ds); 1_u32
         when 0x1F_u8
@@ -298,6 +314,7 @@ module Swanium
         when 0x8E_u8
           mod_rm = decode_mod_rm(bus)
           @registers.set_segment(mod_rm.reg, read_operand16(bus, mod_rm.operand))
+          @interrupt_inhibit = 1_u8 if mod_rm.reg == 2_u8
           cycles(mod_rm.operand, 1_u32, 1_u32)
         when 0x8F_u8
           execute_pop_rm16(bus)
@@ -406,7 +423,9 @@ module Swanium
         when 0xCF_u8
           @registers.ip = pop16(bus)
           @registers.cs = pop16(bus)
+          old_interrupt = @flags.interrupt
           @flags = Flags.from_u16(pop16(bus))
+          @interrupt_inhibit = 1_u8 if !old_interrupt && @flags.interrupt
           10_u32
         when 0xC6_u8
           mod_rm = decode_mod_rm(bus)
@@ -538,7 +557,9 @@ module Swanium
           @flags.interrupt = false
           1_u32
         when 0xFB_u8
+          was_enabled = @flags.interrupt
           @flags.interrupt = true
+          @interrupt_inhibit = 1_u8 unless was_enabled
           1_u32
         when 0xFC_u8
           @flags.direction = false

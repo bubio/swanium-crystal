@@ -38,7 +38,7 @@ module Swanium
           @interrupts.request(InterruptSource::Timer)
         end
 
-        if @cpu.flags.interrupt
+        if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
           if source = @interrupts.next_pending?
             @interrupts.clear(source)
             cycles += @cpu.service_interrupt(bus, timer_vector)
@@ -53,7 +53,7 @@ module Swanium
       # highest-priority enabled request at the following instruction boundary.
       def step_wonder_swan(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
-        if @cpu.flags.interrupt
+        if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
           if vector = bus.pending_interrupt_vector?
             cycles += @cpu.service_interrupt(bus, vector)
           end
