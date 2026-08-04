@@ -85,7 +85,7 @@ describe Swanium::Core::Cpu do
     cpu.halted.should be_true
   end
 
-  it "takes conditional branches and records unsupported opcodes deterministically" do
+  it "takes conditional branches" do
     memory = Swanium::Core::FlatMemory.new
     # JE +2 ; HLT ; HLT
     memory.load(0_u32, Bytes[0x74, 0x02, 0xF4, 0xF4])
@@ -95,13 +95,6 @@ describe Swanium::Core::Cpu do
 
     cpu.step(memory).should eq(5_u32)
     cpu.registers.ip.should eq(0x0004_u16)
-
-    unsupported = Swanium::Core::FlatMemory.new
-    unsupported.write_u8(0_u32, 0x9B_u8)
-    cpu.reset(0_u16, 0_u16)
-    cpu.step(unsupported)
-    cpu.halted.should be_true
-    cpu.fault_opcode.should eq(0x9B_u8)
   end
 
   it "pushes state and loads a real-mode vector when servicing an interrupt" do
@@ -651,5 +644,18 @@ describe Swanium::Core::Cpu do
     cpu.registers.ax.should eq(0x55AA_u16)
     cpu.flags.carry.should be_true
     cpu.halted.should be_false
+  end
+
+  it "has a non-faulting representative encoding for every primary opcode" do
+    256.times do |opcode|
+      memory = Swanium::Core::FlatMemory.new
+      memory.load(0_u32, Bytes[opcode.to_u8, 0, 0, 0, 0, 0, 0, 0])
+      cpu = Swanium::Core::Cpu.new
+      cpu.reset(0_u16, 0_u16)
+      cpu.registers.ss = 0_u16
+      cpu.registers.sp = 0xFFFE_u16
+      cpu.step(memory)
+      cpu.fault_opcode.should be_nil, "opcode 0x%02X faulted" % opcode
+    end
   end
 end

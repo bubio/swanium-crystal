@@ -352,6 +352,9 @@ module Swanium
           @registers.ip = new_ip
           @registers.cs = new_cs
           10_u32
+        when 0x9B_u8
+          # WAIT/FWAIT: no coprocessor exists on WonderSwan.
+          1_u32
         when 0xA0_u8
           segment = @segment_override || @registers.ds
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(segment, fetch_u16(bus))))
