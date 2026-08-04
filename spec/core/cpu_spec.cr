@@ -256,4 +256,52 @@ describe Swanium::Core::Cpu do
     cpu.registers.si.should eq(0x0012_u16)
     cpu.registers.cx.should eq(0_u16)
   end
+
+  it "executes V30 shifts, rotates, and XLAT" do
+    memory = Swanium::Core::FlatMemory.new
+    # SHL AL,1 ; SHR AX,CL ; ROL AL,1 ; SAR AL,1 ; XLAT
+    memory.load(0_u32, Bytes[0xD0, 0xE0, 0xD3, 0xE8, 0xD0, 0xC0, 0xD0, 0xF8, 0xD7])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x0081_u16
+
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x02_u8)
+    cpu.flags.carry.should be_true
+
+    cpu.registers.ax = 0x0010_u16
+    cpu.registers.cx = 4_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0001_u16)
+
+    cpu.registers.ax = 0x0081_u16
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x03_u8)
+    cpu.flags.carry.should be_true
+
+    cpu.registers.ax = 0x0080_u16
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0xC0_u8)
+    cpu.flags.carry.should be_false
+
+    cpu.registers.ds = 0x0010_u16
+    cpu.registers.bx = 0x0020_u16
+    cpu.registers.ax = 0x0003_u16
+    memory.write_u8(0x0123_u32, 0x5A_u8)
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x5A_u8)
+  end
+
+  it "leaves a shift's flags unchanged for a zero count" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xD3, 0xE0])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x1234_u16
+    cpu.flags.carry = true
+
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x1234_u16)
+    cpu.flags.carry.should be_true
+  end
 end

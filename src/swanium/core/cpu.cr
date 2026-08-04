@@ -15,6 +15,16 @@ module Swanium
       Compare
     end
 
+    enum ShiftOperation
+      Rol
+      Ror
+      Rcl
+      Rcr
+      Shl
+      Shr
+      Sar
+    end
+
     # Decoded ModRM operand, resolved before executing the instruction.
     struct RegisterOrMemory
       getter register_index : UInt8?
@@ -311,6 +321,10 @@ module Swanium
         when 0xB8_u8..0xBF_u8
           @registers.set_reg16(opcode & 0x07_u8, fetch_u16(bus))
           1_u32
+        when 0xC0_u8
+          execute_shift8(bus, fetch_u8(bus))
+        when 0xC1_u8
+          execute_shift16(bus, fetch_u8(bus))
         when 0xC3_u8
           @registers.ip = pop16(bus)
           6_u32
@@ -322,6 +336,18 @@ module Swanium
           mod_rm = decode_mod_rm(bus)
           write_operand16(bus, mod_rm.operand, fetch_u16(bus))
           cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0xD0_u8
+          execute_shift8(bus, 1_u8)
+        when 0xD1_u8
+          execute_shift16(bus, 1_u8)
+        when 0xD2_u8
+          execute_shift8(bus, @registers.reg8(1_u8))
+        when 0xD3_u8
+          execute_shift16(bus, @registers.reg8(1_u8))
+        when 0xD7_u8
+          offset = @registers.bx &+ @registers.reg8(0_u8).to_u16
+          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, offset)))
+          5_u32
         when 0xE8_u8
           relative = fetch_u16(bus)
           push16(bus, @registers.ip)
@@ -474,6 +500,106 @@ module Swanium
         result = alu16(operation, read_operand16(bus, mod_rm.operand), immediate)
         write_operand16(bus, mod_rm.operand, result) unless operation.compare?
         cycles(mod_rm.operand, 1_u32, 3_u32)
+      end
+
+      private def execute_shift8(bus : MemoryBus, count : UInt8) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        result = shift8(shift_operation(mod_rm.reg), read_operand8(bus, mod_rm.operand), count)
+        write_operand8(bus, mod_rm.operand, result)
+        cycles(mod_rm.operand, count == 1_u8 ? 1_u32 : 3_u32, count == 1_u8 ? 3_u32 : 5_u32)
+      end
+
+      private def execute_shift16(bus : MemoryBus, count : UInt8) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        result = shift16(shift_operation(mod_rm.reg), read_operand16(bus, mod_rm.operand), count)
+        write_operand16(bus, mod_rm.operand, result)
+        cycles(mod_rm.operand, count == 1_u8 ? 1_u32 : 3_u32, count == 1_u8 ? 3_u32 : 5_u32)
+      end
+
+      private def shift_operation(reg : UInt8) : ShiftOperation
+        case reg & 0x07_u8
+        when 0_u8       then ShiftOperation::Rol
+        when 1_u8       then ShiftOperation::Ror
+        when 2_u8       then ShiftOperation::Rcl
+        when 3_u8       then ShiftOperation::Rcr
+        when 4_u8, 6_u8 then ShiftOperation::Shl
+        when 5_u8       then ShiftOperation::Shr
+        else                 ShiftOperation::Sar
+        end
+      end
+
+      private def shift8(operation : ShiftOperation, value : UInt8, count : UInt8) : UInt8
+        return value if count == 0_u8
+
+        original_msb = value.bit(7) == 1
+        result = value
+        count.times { result = shift_step8(operation, result) }
+        set_zsp8(result) if operation.shl? || operation.shr? || operation.sar?
+        if count == 1_u8
+          @flags.overflow = case operation
+                            when .shl? then (result.bit(7) == 1) != @flags.carry
+                            when .shr? then original_msb
+                            when .sar? then false
+                            else            @flags.overflow
+                            end
+        end
+        result
+      end
+
+      private def shift16(operation : ShiftOperation, value : UInt16, count : UInt8) : UInt16
+        return value if count == 0_u8
+
+        original_msb = value.bit(15) == 1
+        result = value
+        count.times { result = shift_step16(operation, result) }
+        set_zsp16(result) if operation.shl? || operation.shr? || operation.sar?
+        if count == 1_u8
+          @flags.overflow = case operation
+                            when .shl? then (result.bit(15) == 1) != @flags.carry
+                            when .shr? then original_msb
+                            when .sar? then false
+                            else            @flags.overflow
+                            end
+        end
+        result
+      end
+
+      private def shift_step8(operation : ShiftOperation, value : UInt8) : UInt8
+        case operation
+        when .rol?
+          carry = value.bit(7) == 1; @flags.carry = carry; (value << 1) | (carry ? 1_u8 : 0_u8)
+        when .ror?
+          carry = value.bit(0) == 1; @flags.carry = carry; (value >> 1) | (carry ? 0x80_u8 : 0_u8)
+        when .rcl?
+          carry_in = @flags.carry ? 1_u8 : 0_u8; @flags.carry = value.bit(7) == 1; (value << 1) | carry_in
+        when .rcr?
+          carry_in = @flags.carry ? 0x80_u8 : 0_u8; @flags.carry = value.bit(0) == 1; (value >> 1) | carry_in
+        when .shl?
+          @flags.carry = value.bit(7) == 1; value << 1
+        when .shr?
+          @flags.carry = value.bit(0) == 1; value >> 1
+        else
+          @flags.carry = value.bit(0) == 1; (value >> 1) | (value.bit(7) == 1 ? 0x80_u8 : 0_u8)
+        end
+      end
+
+      private def shift_step16(operation : ShiftOperation, value : UInt16) : UInt16
+        case operation
+        when .rol?
+          carry = value.bit(15) == 1; @flags.carry = carry; (value << 1) | (carry ? 1_u16 : 0_u16)
+        when .ror?
+          carry = value.bit(0) == 1; @flags.carry = carry; (value >> 1) | (carry ? 0x8000_u16 : 0_u16)
+        when .rcl?
+          carry_in = @flags.carry ? 1_u16 : 0_u16; @flags.carry = value.bit(15) == 1; (value << 1) | carry_in
+        when .rcr?
+          carry_in = @flags.carry ? 0x8000_u16 : 0_u16; @flags.carry = value.bit(0) == 1; (value >> 1) | carry_in
+        when .shl?
+          @flags.carry = value.bit(15) == 1; value << 1
+        when .shr?
+          @flags.carry = value.bit(0) == 1; value >> 1
+        else
+          @flags.carry = value.bit(0) == 1; (value >> 1) | (value.bit(15) == 1 ? 0x8000_u16 : 0_u16)
+        end
       end
 
       private def decode_mod_rm(bus : MemoryBus) : ModRm
