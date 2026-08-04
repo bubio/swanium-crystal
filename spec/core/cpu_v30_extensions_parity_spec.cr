@@ -20,6 +20,16 @@ private def bound_cpu(index : UInt16, lower : UInt16, upper : UInt16) : Swanium:
   cpu
 end
 
+private def popa_cpu : Swanium::Core::Cpu
+  cpu, memory = extension_cpu(Bytes[0x61])
+  cpu.registers.sp = 0xFFEE_u16
+  [0x00D1_u16, 0x0051_u16, 0x00B0_u16, 0x1111_u16, 0x00B3_u16, 0x00D2_u16, 0x00C1_u16, 0x00A0_u16].each_with_index do |value, index|
+    memory.write_u16(0xFFEE_u32 + index.to_u32 * 2_u32, value)
+  end
+  cpu.step(memory)
+  cpu
+end
+
 # One-to-one counterparts of the non-I/O portions of
 # crates/core/src/cpu/tests/v30_extensions.rs.
 describe "Rust V30 extension parity" do
@@ -60,6 +70,18 @@ describe "Rust V30 extension parity" do
     cpu.registers.di.should eq(0x00D1_u16)
     cpu.registers.sp.should eq(0xFFFE_u16)
     cpu.registers.sp.should_not eq(0x1111_u16)
+  end
+
+  it "matches Rust popa_restores_di" do
+    popa_cpu.registers.di.should eq(0x00D1_u16)
+  end
+
+  it "matches Rust popa_increments_sp_by_16" do
+    popa_cpu.registers.sp.should eq(0xFFFE_u16)
+  end
+
+  it "matches Rust popa_discards_sp_slot" do
+    popa_cpu.registers.sp.should_not eq(0x1111_u16)
   end
 
   it "matches Rust push_imm16_stores_value" do
