@@ -191,6 +191,14 @@ module Swanium
           push16(bus, @registers.ds); 1_u32
         when 0x1F_u8
           @registers.ds = pop16(bus); 1_u32
+        when 0x27_u8
+          execute_daa
+        when 0x2F_u8
+          execute_das
+        when 0x37_u8
+          execute_aaa
+        when 0x3F_u8
+          execute_aas
         when 0x40_u8..0x47_u8
           index = opcode & 0x07_u8
           @registers.set_reg16(index, increment16(@registers.reg16(index)))
@@ -386,6 +394,12 @@ module Swanium
           mod_rm = decode_mod_rm(bus)
           write_operand16(bus, mod_rm.operand, fetch_u16(bus))
           cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0xC8_u8
+          execute_enter(bus)
+        when 0xC9_u8
+          @registers.sp = @registers.bp
+          @registers.bp = pop16(bus)
+          2_u32
         when 0xD0_u8
           execute_shift8(bus, 1_u8)
         when 0xD1_u8
@@ -394,6 +408,13 @@ module Swanium
           execute_shift8(bus, @registers.reg8(1_u8))
         when 0xD3_u8
           execute_shift16(bus, @registers.reg8(1_u8))
+        when 0xD4_u8
+          execute_aam(bus)
+        when 0xD5_u8
+          execute_aad(bus)
+        when 0xD6_u8
+          @registers.set_reg8(0_u8, @flags.carry ? 0xFF_u8 : 0_u8)
+          3_u32
         when 0xD7_u8
           offset = @registers.bx &+ @registers.reg8(0_u8).to_u16
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, offset)))
@@ -560,6 +581,107 @@ module Swanium
         result = alu16(operation, read_operand16(bus, mod_rm.operand), immediate)
         write_operand16(bus, mod_rm.operand, result) unless operation.compare?
         cycles(mod_rm.operand, 1_u32, 3_u32)
+      end
+
+      private def execute_daa : UInt32
+        original = @registers.reg8(0_u8)
+        result = original
+        if (original & 0x0F_u8) > 9_u8 || @flags.auxiliary_carry
+          result &+= 6_u8
+          @flags.auxiliary_carry = true
+        else
+          @flags.auxiliary_carry = false
+        end
+        @flags.carry = original > 0x99_u8 || @flags.carry
+        result &+= 0x60_u8 if @flags.carry
+        @registers.set_reg8(0_u8, result)
+        set_zsp8(result)
+        10_u32
+      end
+
+      private def execute_das : UInt32
+        original = @registers.reg8(0_u8)
+        result = original
+        if (original & 0x0F_u8) > 9_u8 || @flags.auxiliary_carry
+          result &-= 6_u8
+          @flags.auxiliary_carry = true
+        else
+          @flags.auxiliary_carry = false
+        end
+        @flags.carry = original > 0x99_u8 || @flags.carry
+        result &-= 0x60_u8 if @flags.carry
+        @registers.set_reg8(0_u8, result)
+        set_zsp8(result)
+        10_u32
+      end
+
+      private def execute_aaa : UInt32
+        al = @registers.reg8(0_u8)
+        ah = @registers.reg8(4_u8)
+        if (al & 0x0F_u8) > 9_u8 || @flags.auxiliary_carry
+          @registers.set_reg8(0_u8, (al &+ 6_u8) & 0x0F_u8)
+          @registers.set_reg8(4_u8, ah &+ 1_u8)
+          @flags.auxiliary_carry = true
+          @flags.carry = true
+        else
+          @registers.set_reg8(0_u8, al & 0x0F_u8)
+          @flags.auxiliary_carry = false
+          @flags.carry = false
+        end
+        9_u32
+      end
+
+      private def execute_aas : UInt32
+        al = @registers.reg8(0_u8)
+        ah = @registers.reg8(4_u8)
+        if (al & 0x0F_u8) > 9_u8 || @flags.auxiliary_carry
+          @registers.set_reg8(0_u8, (al &- 6_u8) & 0x0F_u8)
+          @registers.set_reg8(4_u8, ah &- 1_u8)
+          @flags.auxiliary_carry = true
+          @flags.carry = true
+        else
+          @registers.set_reg8(0_u8, al & 0x0F_u8)
+          @flags.auxiliary_carry = false
+          @flags.carry = false
+        end
+        9_u32
+      end
+
+      private def execute_aam(bus : MemoryBus) : UInt32
+        base = fetch_u8(bus)
+        return service_interrupt(bus, 0_u8) if base == 0_u8
+
+        al = @registers.reg8(0_u8)
+        @registers.set_reg8(4_u8, al // base)
+        @registers.set_reg8(0_u8, al % base)
+        set_zsp8(@registers.reg8(0_u8))
+        17_u32
+      end
+
+      private def execute_aad(bus : MemoryBus) : UInt32
+        base = fetch_u8(bus)
+        result = @registers.reg8(4_u8) &* base &+ @registers.reg8(0_u8)
+        @registers.ax = result.to_u16
+        set_zsp8(result)
+        6_u32
+      end
+
+      private def execute_enter(bus : MemoryBus) : UInt32
+        size = fetch_u16(bus)
+        level = fetch_u8(bus) & 0x1F_u8
+        old_bp = @registers.bp
+        push16(bus, old_bp)
+        frame = @registers.sp
+        if level > 0_u8
+          (1_u8...level).each do
+            @registers.bp &-= 2_u16
+            push16(bus, bus.read_u16(Core.linear_address(@registers.ss, @registers.bp)))
+          end
+          push16(bus, frame)
+        end
+        @registers.bp = frame
+        @registers.sp &-= size
+        8_u32
       end
 
       private def execute_shift8(bus : MemoryBus, count : UInt8) : UInt32

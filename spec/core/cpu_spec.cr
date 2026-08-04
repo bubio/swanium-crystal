@@ -488,4 +488,47 @@ describe Swanium::Core::Cpu do
     cpu.registers.cx.should eq(1_u16)
     cpu.registers.di.should eq(0x0504_u16)
   end
+
+  it "executes BCD adjustment, AAM/AAD, SALC, and ENTER/LEAVE" do
+    memory = Swanium::Core::FlatMemory.new
+    # AAA ; AAS ; DAA ; DAS ; AAM 10 ; AAD 10 ; SALC ; ENTER 8,0 ; LEAVE
+    memory.load(0_u32, Bytes[0x37, 0x3F, 0x27, 0x2F, 0xD4, 10, 0xD5, 10, 0xD6, 0xC8, 8, 0, 0, 0xC9])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x000F_u16
+
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0105_u16)
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x000F_u16)
+
+    cpu.registers.ax = 0x009A_u16
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0_u8)
+    cpu.flags.carry.should be_true
+    cpu.registers.ax = 0x0000_u16
+    cpu.flags.carry = true
+    cpu.flags.auxiliary_carry = false
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0xA0_u8)
+
+    cpu.registers.ax = 30_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0300_u16)
+    cpu.step(memory)
+    cpu.registers.ax.should eq(30_u16)
+    cpu.flags.carry = true
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0xFF_u8)
+
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0x0100_u16
+    cpu.registers.bp = 0xBEEF_u16
+    cpu.step(memory)
+    cpu.registers.bp.should eq(0x00FE_u16)
+    cpu.registers.sp.should eq(0x00F6_u16)
+    cpu.step(memory)
+    cpu.registers.bp.should eq(0xBEEF_u16)
+    cpu.registers.sp.should eq(0x0100_u16)
+  end
 end
