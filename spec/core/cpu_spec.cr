@@ -21,6 +21,16 @@ class IoMemory < Swanium::Core::FlatMemory
   end
 end
 
+private def cpu_with(code : Bytes) : Tuple(Swanium::Core::Cpu, Swanium::Core::FlatMemory)
+  memory = Swanium::Core::FlatMemory.new
+  memory.load(0_u32, code)
+  cpu = Swanium::Core::Cpu.new
+  cpu.reset(0_u16, 0_u16)
+  cpu.registers.ss = 0_u16
+  cpu.registers.sp = 0xFFFE_u16
+  {cpu, memory}
+end
+
 describe Swanium::Core::Cpu do
   it "fetches little-endian instruction data and wraps IP" do
     memory = Swanium::Core::FlatMemory.new
@@ -680,5 +690,112 @@ describe Swanium::Core::Cpu do
       cpu.step(memory)
       cpu.fault_opcode.should be_nil, "opcode 0x%02X faulted" % opcode
     end
+  end
+
+  # These cases correspond one-to-one to crates/core/src/cpu/tests/alu.rs in
+  # the Rust implementation. Keep the names aligned to make parity reviews
+  # mechanical rather than relying on broad multi-instruction smoke tests.
+  it "matches Rust add_al_imm8_sets_carry_and_aux_carry" do
+    cpu, memory = cpu_with(Bytes[0x04, 0x05])
+    cpu.registers.ax = 0x00FE_u16
+
+    cpu.step(memory).should eq(1_u32)
+    cpu.registers.reg8(0_u8).should eq(0x03_u8)
+    cpu.flags.carry.should be_true
+    cpu.flags.auxiliary_carry.should be_true
+    cpu.flags.overflow.should be_false
+    cpu.flags.zero.should be_false
+    cpu.flags.sign.should be_false
+    cpu.flags.parity.should be_true
+  end
+
+  it "matches Rust add_al_imm8_signed_overflow" do
+    cpu, memory = cpu_with(Bytes[0x04, 0x01])
+    cpu.registers.ax = 0x007F_u16
+
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x80_u8)
+    cpu.flags.overflow.should be_true
+    cpu.flags.sign.should be_true
+    cpu.flags.carry.should be_false
+  end
+
+  it "matches Rust sub_al_imm8_borrows" do
+    cpu, memory = cpu_with(Bytes[0x2C, 0x01])
+    cpu.step(memory)
+
+    cpu.registers.reg8(0_u8).should eq(0xFF_u8)
+    cpu.flags.carry.should be_true
+    cpu.flags.auxiliary_carry.should be_true
+    cpu.flags.overflow.should be_false
+    cpu.flags.sign.should be_true
+  end
+
+  it "matches Rust cmp_al_imm8_does_not_modify_register" do
+    cpu, memory = cpu_with(Bytes[0x3C, 0x05])
+    cpu.registers.ax = 0x0005_u16
+    cpu.step(memory)
+
+    cpu.registers.reg8(0_u8).should eq(0x05_u8)
+    cpu.flags.zero.should be_true
+    cpu.flags.carry.should be_false
+  end
+
+  it "matches Rust and_ax_imm16_clears_carry_and_overflow" do
+    cpu, memory = cpu_with(Bytes[0x25, 0x0F, 0x0F])
+    cpu.registers.ax = 0xFFFF_u16
+    cpu.step(memory)
+
+    cpu.registers.ax.should eq(0x0F0F_u16)
+    cpu.flags.carry.should be_false
+    cpu.flags.overflow.should be_false
+  end
+
+  it "matches Rust or_ax_imm16_sets_zero_flag_when_result_is_zero" do
+    cpu, memory = cpu_with(Bytes[0x0D, 0x00, 0x00])
+    cpu.step(memory)
+    cpu.flags.zero.should be_true
+  end
+
+  it "matches Rust xor_ax_imm16_self_clears_register" do
+    cpu, memory = cpu_with(Bytes[0x35, 0xFF, 0xFF])
+    cpu.registers.ax = 0xFFFF_u16
+    cpu.step(memory)
+
+    cpu.registers.ax.should eq(0_u16)
+    cpu.flags.zero.should be_true
+  end
+
+  it "matches Rust inc_ax_sets_overflow_at_signed_boundary_but_not_carry" do
+    cpu, memory = cpu_with(Bytes[0x40])
+    cpu.registers.ax = 0x7FFF_u16
+    cpu.flags.carry = true
+    cpu.step(memory).should eq(1_u32)
+
+    cpu.registers.ax.should eq(0x8000_u16)
+    cpu.flags.overflow.should be_true
+    cpu.flags.auxiliary_carry.should be_true
+    cpu.flags.carry.should be_true
+  end
+
+  it "matches Rust dec_ax_sets_overflow_at_signed_boundary_but_not_carry" do
+    cpu, memory = cpu_with(Bytes[0x48])
+    cpu.registers.ax = 0x8000_u16
+    cpu.flags.carry = false
+    cpu.step(memory)
+
+    cpu.registers.ax.should eq(0x7FFF_u16)
+    cpu.flags.overflow.should be_true
+    cpu.flags.carry.should be_false
+  end
+
+  it "matches Rust add_rm16_r16_register_form" do
+    cpu, memory = cpu_with(Bytes[0x01, 0xC3])
+    cpu.registers.ax = 0x0010_u16
+    cpu.registers.bx = 0x0005_u16
+    cpu.step(memory).should eq(1_u32)
+
+    cpu.registers.bx.should eq(0x0015_u16)
+    cpu.registers.ax.should eq(0x0010_u16)
   end
 end
