@@ -27,6 +27,21 @@ module Swanium
       HBlankTimer   = 7
     end
 
+    # Bit layout supplied by the platform layer to the keypad matrix.
+    module WonderSwanKey
+      Y1    = 1_u16 << 0
+      Y2    = 1_u16 << 1
+      Y3    = 1_u16 << 2
+      Y4    = 1_u16 << 3
+      X1    = 1_u16 << 4
+      X2    = 1_u16 << 5
+      X3    = 1_u16 << 6
+      X4    = 1_u16 << 7
+      Start = 1_u16 << 9
+      A     = 1_u16 << 10
+      B     = 1_u16 << 11
+    end
+
     # Platform-neutral first hardware bus. It models the CPU-visible address
     # map and cartridge bank registers while PPU/APU/DMA devices are added on
     # top through the same I/O port file.
@@ -37,6 +52,7 @@ module Swanium
       getter work_ram : Bytes
       getter save_ram : Bytes
       getter ports : Bytes
+      getter keys : UInt16
 
       def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono)
         raise ArgumentError.new("save RAM size must not be negative") if save_ram_size < 0
@@ -47,6 +63,7 @@ module Swanium
         @ram_bank = 0xFF_u8
         @rom_bank0 = 0xFF_u8
         @rom_bank1 = 0xFF_u8
+        @keys = 0_u16
       end
 
       def read_u8(address : UInt32) : UInt8
@@ -78,6 +95,7 @@ module Swanium
         when 0xC3_u8          then @rom_bank1
         when 0xA2_u8, 0xA3_u8 then @ports[port] & 0x0F_u8
         when 0xB0_u8          then @ports[port] & 0xF8_u8
+        when 0xB5_u8          then scan_keys(@ports[port] & 0x70_u8)
         else                       @ports[port]
         end
       end
@@ -109,6 +127,8 @@ module Swanium
           @ports[port] = value
         when 0xB3_u8
           @ports[port] = value & 0xC4_u8
+        when 0xB5_u8
+          @ports[port] = value & 0x70_u8
         when 0xB6_u8
           @ports[port] = value
           @ports[0xB4] &= ~value
@@ -119,6 +139,13 @@ module Swanium
 
       def request_interrupt(source : WonderSwanInterrupt) : Nil
         @ports[0xB4] |= (1_u8 << source.value) & @ports[0xB2]
+      end
+
+      # The platform layer supplies a complete input snapshot. Only a newly
+      # pressed key raises the edge-triggered KeyPress source.
+      def set_keys(keys : UInt16) : Nil
+        request_interrupt(WonderSwanInterrupt::KeyPress) if (keys & ~@keys) != 0_u16
+        @keys = keys
       end
 
       def pending_interrupt_vector? : UInt8?
@@ -205,6 +232,14 @@ module Swanium
       private def write_counter(port : UInt8, value : UInt16) : Nil
         @ports[port] = (value & 0x00FF_u16).to_u8
         @ports[port &+ 1_u8] = (value >> 8).to_u8
+      end
+
+      private def scan_keys(selector : UInt8) : UInt8
+        result = selector
+        result |= (@keys & 0x000F_u16).to_u8 if (selector & 0x10_u8) != 0_u8
+        result |= ((@keys >> 4) & 0x000F_u16).to_u8 if (selector & 0x20_u8) != 0_u8
+        result |= ((@keys >> 8) & 0x000F_u16).to_u8 if (selector & 0x40_u8) != 0_u8
+        result
       end
     end
   end

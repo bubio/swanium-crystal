@@ -54,4 +54,23 @@ describe Swanium::Core::WonderSwanBus do
     bus.write_io(0xB6_u8, 0xC0_u8)
     bus.pending_interrupt_vector?.should be_nil
   end
+
+  it "scans keypad groups and latches only new key presses" do
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_io(0xB2_u8, 0x02_u8)
+    keys = Swanium::Core::WonderSwanKey::Y1 | Swanium::Core::WonderSwanKey::Y3 |
+           Swanium::Core::WonderSwanKey::X2 | Swanium::Core::WonderSwanKey::A
+    bus.set_keys(keys)
+    bus.write_io(0xB5_u8, 0x10_u8)
+    bus.read_io(0xB5_u8).should eq(0x15_u8)
+    bus.write_io(0xB5_u8, 0x60_u8)
+    bus.read_io(0xB5_u8).should eq(0x66_u8)
+    bus.read_io(0xB4_u8).should eq(0x02_u8)
+
+    bus.write_io(0xB6_u8, 0x02_u8)
+    bus.set_keys(keys)
+    bus.read_io(0xB4_u8).should eq(0_u8)
+    bus.set_keys(keys | Swanium::Core::WonderSwanKey::B)
+    bus.read_io(0xB4_u8).should eq(0x02_u8)
+  end
 end
