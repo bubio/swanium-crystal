@@ -55,7 +55,7 @@ describe Swanium::Core::Machine do
 
     256.times { machine.step_wonder_swan(bus) }
     machine.scanline.should eq(1_u16)
-    bus.read_io(0xB4_u8).should eq(0x80_u8)
+    bus.pending_interrupt_vector?.should eq(0x47_u8)
     machine.step_wonder_swan(bus)
     machine.cpu.registers.ip.should eq(0x1234_u16)
   end

@@ -45,10 +45,10 @@ describe Swanium::Core::WonderSwanBus do
     bus.write_io(0xA5_u8, 0_u8)
     bus.write_io(0xA2_u8, 0x03_u8)
     bus.on_hblank
-    bus.read_io(0xB4_u8).should eq(0x80_u8)
     bus.pending_interrupt_vector?.should eq(0x87_u8)
+    bus.read_io(0xB4_u8).should eq(0x80_u8)
+    bus.pending_interrupt_vector?.should be_nil
 
-    bus.write_io(0xB6_u8, 0x80_u8)
     bus.on_vblank
     bus.pending_interrupt_vector?.should eq(0x86_u8)
     bus.write_io(0xB6_u8, 0xC0_u8)
@@ -72,5 +72,20 @@ describe Swanium::Core::WonderSwanBus do
     bus.read_io(0xB4_u8).should eq(0_u8)
     bus.set_keys(keys | Swanium::Core::WonderSwanKey::B)
     bus.read_io(0xB4_u8).should eq(0x02_u8)
+  end
+
+  it "reports the active IRQ priority in the Mono interrupt-base readback" do
+    mono = Swanium::Core::WonderSwanBus.new
+    mono.write_io(0xB0_u8, 0x40_u8)
+    mono.write_io(0xB2_u8, 0x82_u8)
+    mono.request_interrupt(Swanium::Core::WonderSwanInterrupt::KeyPress)
+    mono.request_interrupt(Swanium::Core::WonderSwanInterrupt::HBlankTimer)
+    mono.read_io(0xB0_u8).should eq(0x47_u8)
+
+    color = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Color)
+    color.write_io(0xB0_u8, 0x40_u8)
+    color.write_io(0xB2_u8, 0x80_u8)
+    color.request_interrupt(Swanium::Core::WonderSwanInterrupt::HBlankTimer)
+    color.read_io(0xB0_u8).should eq(0x40_u8)
   end
 end

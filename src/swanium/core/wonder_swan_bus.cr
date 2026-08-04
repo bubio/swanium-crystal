@@ -94,9 +94,16 @@ module Swanium
         when 0xC2_u8          then @rom_bank0
         when 0xC3_u8          then @rom_bank1
         when 0xA2_u8, 0xA3_u8 then @ports[port] & 0x0F_u8
-        when 0xB0_u8          then @ports[port] & 0xF8_u8
-        when 0xB5_u8          then scan_keys(@ports[port] & 0x70_u8)
-        else                       @ports[port]
+        when 0xB0_u8
+          @model == WonderSwanModel::Mono ? (@ports[port] & 0xF8_u8) | highest_pending_bit : @ports[port] & 0xF8_u8
+        when 0xB4_u8
+          cause = @ports[port]
+          # Key, scanline and timer sources are edge-triggered and clear on
+          # INT_CAUSE reads. Serial/cartridge/DMA remain level-latched.
+          @ports[port] &= 0x0D_u8
+          cause
+        when 0xB5_u8 then scan_keys(@ports[port] & 0x70_u8)
+        else              @ports[port]
         end
       end
 
@@ -240,6 +247,13 @@ module Swanium
         result |= ((@keys >> 4) & 0x000F_u16).to_u8 if (selector & 0x20_u8) != 0_u8
         result |= ((@keys >> 8) & 0x000F_u16).to_u8 if (selector & 0x40_u8) != 0_u8
         result
+      end
+
+      private def highest_pending_bit : UInt8
+        7.downto(0) do |priority|
+          return priority.to_u8 if @ports[0xB4].bit(priority) == 1
+        end
+        0_u8
       end
     end
   end
