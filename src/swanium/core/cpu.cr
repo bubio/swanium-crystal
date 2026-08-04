@@ -302,11 +302,41 @@ module Swanium
           else
             1_u32
           end
+        when 0xE4_u8
+          @registers.set_reg8(0_u8, bus.read_io(fetch_u8(bus)))
+          4_u32
+        when 0xE5_u8
+          port = fetch_u8(bus)
+          @registers.ax = bus.read_io(port).to_u16 | (bus.read_io(port &+ 1_u8).to_u16 << 8)
+          4_u32
+        when 0xE6_u8
+          bus.write_io(fetch_u8(bus), @registers.reg8(0_u8))
+          4_u32
+        when 0xE7_u8
+          port = fetch_u8(bus)
+          bus.write_io(port, @registers.reg8(0_u8))
+          bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
+          4_u32
         when 0xE9_u8
           @registers.ip &+= fetch_u16(bus)
           4_u32
         when 0xEB_u8
           @registers.ip &+= signed_byte(fetch_u8(bus))
+          4_u32
+        when 0xEC_u8
+          @registers.set_reg8(0_u8, bus.read_io(@registers.reg8(2_u8)))
+          4_u32
+        when 0xED_u8
+          port = @registers.reg8(2_u8)
+          @registers.ax = bus.read_io(port).to_u16 | (bus.read_io(port &+ 1_u8).to_u16 << 8)
+          4_u32
+        when 0xEE_u8
+          bus.write_io(@registers.reg8(2_u8), @registers.reg8(0_u8))
+          4_u32
+        when 0xEF_u8
+          port = @registers.reg8(2_u8)
+          bus.write_io(port, @registers.reg8(0_u8))
+          bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
           4_u32
         when 0xF4_u8
           @halted = true

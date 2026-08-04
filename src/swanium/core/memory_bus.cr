@@ -19,6 +19,14 @@ module Swanium
         write_u8(address, (value & 0x00FF_u16).to_u8)
         write_u8(address &+ 1_u32, (value >> 8).to_u8)
       end
+
+      # Default open-bus I/O behavior keeps FlatMemory suitable for CPU specs.
+      def read_io(port : UInt8) : UInt8
+        0xFF_u8
+      end
+
+      def write_io(port : UInt8, value : UInt8) : Nil
+      end
     end
 
     class FlatMemory < MemoryBus

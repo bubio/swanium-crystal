@@ -1,5 +1,26 @@
 require "../spec_helper"
 
+class IoMemory < Swanium::Core::FlatMemory
+  getter writes = [] of Tuple(UInt8, UInt8)
+
+  def initialize
+    super
+    @ports = {} of UInt8 => UInt8
+  end
+
+  def set_port(port : UInt8, value : UInt8) : Nil
+    @ports[port] = value
+  end
+
+  def read_io(port : UInt8) : UInt8
+    @ports[port]? || 0xFF_u8
+  end
+
+  def write_io(port : UInt8, value : UInt8) : Nil
+    @writes << {port, value}
+  end
+end
+
 describe Swanium::Core::Cpu do
   it "fetches little-endian instruction data and wraps IP" do
     memory = Swanium::Core::FlatMemory.new
@@ -161,5 +182,18 @@ describe Swanium::Core::Cpu do
     cpu.step(memory)
     cpu.registers.ax.should eq(0x00F0_u16)
     cpu.flags.zero.should be_true
+  end
+
+  it "routes immediate-port IN and OUT through the memory bus" do
+    memory = IoMemory.new
+    memory.set_port(0x10_u8, 0x5A_u8)
+    memory.load(0_u32, Bytes[0xE4, 0x10, 0xE6, 0x20])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x5A_u8)
+    cpu.step(memory)
+    memory.writes.should eq([{0x20_u8, 0x5A_u8}])
   end
 end
