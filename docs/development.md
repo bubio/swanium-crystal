@@ -13,6 +13,8 @@ Crystal は mise が導入する。SDL2 は OS の開発ライブラリを使う
 
 `mise run ci` は整形チェック、headless spec、ビルドを実行する。整形を適用する場合は `mise run format-fix` を使う。`mise run sdl-smoke` はデスクトップセッションで SDL2 のウィンドウ作成を確認する。CI とコアの spec はヘッドレスで実行できる。
 
+公開CPUテストROMはリポジトリに含めない。ローカルでのみ `WS_CPU_TEST_ROM=/path/to/WSCpuTest.wsc mise run wscputest` を実行できる。この診断は命令数、サイクル数、停止理由、最終レジスタを出力する。画面上の Pass/Fail を判定するオラクルは、PPUとタイルマップデコーダが揃う段階で追加する。
+
 ## コーディング規約
 
 - `crystal tool format` の出力を正とする。

@@ -9,11 +9,11 @@ sdl2_version = "2.32.70"
 
 [tasks.format]
 description = "Check Crystal source and spec formatting"
-run = "crystal tool format --check src spec"
+run = "crystal tool format --check src spec tools"
 
 [tasks.format-fix]
 description = "Apply Crystal formatting to source and specs"
-run = "crystal tool format src spec"
+run = "crystal tool format src spec tools"
 
 [tasks.setup]
 description = "Install managed tools and verify the required SDL2 development library"
@@ -42,3 +42,7 @@ depends = ["ci"]
 [tasks.sdl-smoke]
 description = "Create an SDL2 window briefly (requires a desktop session)"
 run = "crystal run src/swanium.cr -- --sdl-smoke"
+
+[tasks.wscputest]
+description = "Opt-in WSCPUTest headless diagnostic (requires WS_CPU_TEST_ROM)"
+run = "crystal run tools/run_wscputest.cr"
