@@ -212,4 +212,21 @@ describe Swanium::Core::Cpu do
 
     cpu.registers.reg8(0_u8).should eq(0xBB_u8)
   end
+
+  it "copies CX bytes with REP MOVSB" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xF3, 0xA4])
+    memory.write_u8(0x0010_u32, 1_u8)
+    memory.write_u8(0x0011_u32, 2_u8)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.si = 0x0010_u16
+    cpu.registers.di = 0x0020_u16
+    cpu.registers.cx = 2_u16
+
+    cpu.step(memory)
+    memory.read_u8(0x0020_u32).should eq(1_u8)
+    memory.read_u8(0x0021_u32).should eq(2_u8)
+    cpu.registers.cx.should eq(0_u16)
+  end
 end

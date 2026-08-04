@@ -76,6 +76,7 @@ module Swanium
         @fault_opcode = nil
         @last_trace = nil
         @segment_override = nil
+        @repeat_prefix = nil
       end
 
       def reset(code_segment : UInt16, instruction_pointer : UInt16) : Nil
@@ -88,6 +89,7 @@ module Swanium
         @fault_opcode = nil
         @last_trace = nil
         @segment_override = nil
+        @repeat_prefix = nil
       end
 
       def fetch_u8(bus : MemoryBus) : UInt8
@@ -112,6 +114,7 @@ module Swanium
         cycles = execute(opcode, bus)
         @last_trace = InstructionTrace.new(code_segment, instruction_pointer, opcode, cycles)
         @segment_override = nil
+        @repeat_prefix = nil
         cycles
       end
 
@@ -126,6 +129,7 @@ module Swanium
         @fault_opcode = nil
         @last_trace = nil
         @segment_override = nil
+        @repeat_prefix = nil
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.
@@ -152,6 +156,9 @@ module Swanium
         end
 
         case opcode
+        when 0xF2_u8, 0xF3_u8
+          @repeat_prefix = opcode
+          execute(fetch_u8(bus), bus)
         when 0x26_u8, 0x2E_u8, 0x36_u8, 0x3E_u8
           @segment_override = case opcode
                               when 0x26_u8 then @registers.es
@@ -277,6 +284,8 @@ module Swanium
         when 0xA0_u8
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, fetch_u16(bus))))
           1_u32
+        when 0xA4_u8
+          execute_movsb(bus)
         when 0xA1_u8
           @registers.ax = bus.read_u16(Core.linear_address(@registers.ds, fetch_u16(bus)))
           1_u32
@@ -676,6 +685,22 @@ module Swanium
         when 14 then @flags.sign != @flags.overflow || @flags.zero
         else         @flags.sign == @flags.overflow && !@flags.zero
         end
+      end
+
+      private def execute_movsb(bus : MemoryBus) : UInt32
+        iterations = @repeat_prefix ? @registers.cx : 1_u16
+        return 1_u32 if iterations == 0_u16
+
+        source_segment = @segment_override || @registers.ds
+        iterations.times do
+          value = bus.read_u8(Core.linear_address(source_segment, @registers.si))
+          bus.write_u8(Core.linear_address(@registers.es, @registers.di), value)
+          delta = @flags.direction ? 0xFFFF_u16 : 1_u16
+          @registers.si &+= delta
+          @registers.di &+= delta
+        end
+        @registers.cx = 0_u16 if @repeat_prefix
+        5_u32 * iterations.to_u32
       end
     end
   end
