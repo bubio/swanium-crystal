@@ -1,6 +1,7 @@
 require "./cpu"
 require "./interrupt_controller"
 require "./timer"
+require "./wonder_swan_bus"
 
 module Swanium
   module Core
