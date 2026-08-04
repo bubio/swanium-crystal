@@ -57,10 +57,10 @@ module Swanium
 
       def reg8(index : UInt8) : UInt8
         case index & 0x07_u8
-        when 0 then @ax.to_u8
-        when 1 then @cx.to_u8
-        when 2 then @dx.to_u8
-        when 3 then @bx.to_u8
+        when 0 then (@ax & 0x00FF_u16).to_u8
+        when 1 then (@cx & 0x00FF_u16).to_u8
+        when 2 then (@dx & 0x00FF_u16).to_u8
+        when 3 then (@bx & 0x00FF_u16).to_u8
         when 4 then (@ax >> 8).to_u8
         when 5 then (@cx >> 8).to_u8
         when 6 then (@dx >> 8).to_u8
