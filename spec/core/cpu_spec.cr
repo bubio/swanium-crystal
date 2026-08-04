@@ -566,4 +566,30 @@ describe Swanium::Core::Cpu do
     cpu.step(memory)
     memory.writes.last.should eq({0x10_u8, 0xAB_u8})
   end
+
+  it "loads V30 effective addresses and far pointers" do
+    memory = Swanium::Core::FlatMemory.new
+    # LEA AX,[BX+0x12] ; LEA CX,[BX+AX] ; LES BX,[0x80] ; LDS SI,[0x40]
+    memory.load(0_u32, Bytes[0x8D, 0x47, 0x12, 0x8D, 0xC8, 0xC4, 0x1E, 0x80, 0, 0xC5, 0x36, 0x40, 0])
+    memory.write_u16(0x0080_u32, 0x1234_u16)
+    memory.write_u16(0x0082_u32, 0xABCD_u16)
+    memory.write_u16(0x0040_u32, 0x5678_u16)
+    memory.write_u16(0x0042_u32, 0x9ABC_u16)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.bx = 0x0100_u16
+
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0112_u16)
+    cpu.registers.ax = 0x1234_u16
+    cpu.registers.bx = 0x5678_u16
+    cpu.step(memory)
+    cpu.registers.cx.should eq(0x68AC_u16)
+    cpu.step(memory)
+    cpu.registers.bx.should eq(0x1234_u16)
+    cpu.registers.es.should eq(0xABCD_u16)
+    cpu.step(memory)
+    cpu.registers.si.should eq(0x5678_u16)
+    cpu.registers.ds.should eq(0x9ABC_u16)
+  end
 end

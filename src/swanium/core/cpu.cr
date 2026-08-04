@@ -287,6 +287,10 @@ module Swanium
           mod_rm = decode_mod_rm(bus)
           write_operand16(bus, mod_rm.operand, @registers.segment(mod_rm.reg))
           cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0x8D_u8
+          reg, offset = decode_effective_offset(bus)
+          @registers.set_reg16(reg, offset)
+          1_u32
         when 0x8E_u8
           mod_rm = decode_mod_rm(bus)
           @registers.set_segment(mod_rm.reg, read_operand16(bus, mod_rm.operand))
@@ -371,6 +375,10 @@ module Swanium
         when 0xC3_u8
           @registers.ip = pop16(bus)
           6_u32
+        when 0xC4_u8
+          execute_load_far_pointer(bus, true)
+        when 0xC5_u8
+          execute_load_far_pointer(bus, false)
         when 0xCA_u8
           extra = fetch_u16(bus)
           @registers.ip = pop16(bus)
@@ -1074,6 +1082,52 @@ module Swanium
                        end
         segment = @segment_override || (use_stack_segment ? @registers.ss : @registers.ds)
         ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(segment, base &+ displacement)))
+      end
+
+      # LEA needs the raw 16-bit offset, not the segment-resolved address that
+      # regular ModRM decoding returns. V30 also defines an extended register
+      # mode address table used by the CPU conformance tests.
+      private def decode_effective_offset(bus : MemoryBus) : Tuple(UInt8, UInt16)
+        byte = fetch_u8(bus)
+        mode = byte >> 6
+        reg = (byte >> 3) & 0x07_u8
+        rm = byte & 0x07_u8
+        return {reg, extended_register_offset(rm)} if mode == 3_u8
+        return {reg, fetch_u16(bus)} if mode == 0_u8 && rm == 6_u8
+
+        base, ignored_stack_segment = effective_address_base(rm)
+        displacement = case mode
+                       when 0_u8 then 0_u16
+                       when 1_u8 then signed_byte(fetch_u8(bus))
+                       else           fetch_u16(bus)
+                       end
+        {reg, base &+ displacement}
+      end
+
+      private def extended_register_offset(rm : UInt8) : UInt16
+        case rm & 0x07_u8
+        when 0_u8 then @registers.bx &+ @registers.ax
+        when 1_u8 then @registers.bx &+ @registers.cx
+        when 2_u8 then @registers.bp &+ @registers.dx
+        when 3_u8 then @registers.bp &+ @registers.bx
+        when 4_u8 then @registers.si &+ @registers.sp
+        when 5_u8 then @registers.di &+ @registers.bp
+        when 6_u8 then @registers.bp &+ @registers.si
+        else           @registers.bx &+ @registers.di
+        end
+      end
+
+      private def execute_load_far_pointer(bus : MemoryBus, es : Bool) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        unless address = mod_rm.operand.memory?
+          @fault_opcode = es ? 0xC4_u8 : 0xC5_u8
+          @halted = true
+          return 1_u32
+        end
+        @registers.set_reg16(mod_rm.reg, bus.read_u16(address))
+        segment = bus.read_u16(address &+ 2_u32)
+        es ? (@registers.es = segment) : (@registers.ds = segment)
+        6_u32
       end
 
       private def effective_address_base(rm : UInt8) : Tuple(UInt16, Bool)
