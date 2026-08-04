@@ -75,6 +75,7 @@ module Swanium
         @halted = false
         @fault_opcode = nil
         @last_trace = nil
+        @segment_override = nil
       end
 
       def reset(code_segment : UInt16, instruction_pointer : UInt16) : Nil
@@ -86,6 +87,7 @@ module Swanium
         @halted = false
         @fault_opcode = nil
         @last_trace = nil
+        @segment_override = nil
       end
 
       def fetch_u8(bus : MemoryBus) : UInt8
@@ -109,6 +111,7 @@ module Swanium
         opcode = fetch_u8(bus)
         cycles = execute(opcode, bus)
         @last_trace = InstructionTrace.new(code_segment, instruction_pointer, opcode, cycles)
+        @segment_override = nil
         cycles
       end
 
@@ -122,6 +125,7 @@ module Swanium
         @halted = snapshot.halted
         @fault_opcode = nil
         @last_trace = nil
+        @segment_override = nil
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.
@@ -148,6 +152,28 @@ module Swanium
         end
 
         case opcode
+        when 0x26_u8, 0x2E_u8, 0x36_u8, 0x3E_u8
+          @segment_override = case opcode
+                              when 0x26_u8 then @registers.es
+                              when 0x2E_u8 then @registers.cs
+                              when 0x36_u8 then @registers.ss
+                              else              @registers.ds
+                              end
+          execute(fetch_u8(bus), bus)
+        when 0x06_u8
+          push16(bus, @registers.es); 1_u32
+        when 0x07_u8
+          @registers.es = pop16(bus); 1_u32
+        when 0x0E_u8
+          push16(bus, @registers.cs); 1_u32
+        when 0x16_u8
+          push16(bus, @registers.ss); 1_u32
+        when 0x17_u8
+          @registers.ss = pop16(bus); 1_u32
+        when 0x1E_u8
+          push16(bus, @registers.ds); 1_u32
+        when 0x1F_u8
+          @registers.ds = pop16(bus); 1_u32
         when 0x40_u8..0x47_u8
           index = opcode & 0x07_u8
           @registers.set_reg16(index, increment16(@registers.reg16(index)))
@@ -213,6 +239,14 @@ module Swanium
         when 0x8B_u8
           mod_rm = decode_mod_rm(bus)
           @registers.set_reg16(mod_rm.reg, read_operand16(bus, mod_rm.operand))
+          cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0x8C_u8
+          mod_rm = decode_mod_rm(bus)
+          write_operand16(bus, mod_rm.operand, @registers.segment(mod_rm.reg))
+          cycles(mod_rm.operand, 1_u32, 1_u32)
+        when 0x8E_u8
+          mod_rm = decode_mod_rm(bus)
+          @registers.set_segment(mod_rm.reg, read_operand16(bus, mod_rm.operand))
           cycles(mod_rm.operand, 1_u32, 1_u32)
         when 0x90_u8
           1_u32
@@ -437,7 +471,8 @@ module Swanium
         return ModRm.new(reg, RegisterOrMemory.new(register_index: rm)) if mode == 3_u8
 
         if mode == 0_u8 && rm == 6_u8
-          return ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(@registers.ds, fetch_u16(bus))))
+          segment = @segment_override || @registers.ds
+          return ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(segment, fetch_u16(bus))))
         end
 
         base, use_stack_segment = effective_address_base(rm)
@@ -446,7 +481,7 @@ module Swanium
                        when 1_u8 then signed_byte(fetch_u8(bus))
                        else           fetch_u16(bus)
                        end
-        segment = use_stack_segment ? @registers.ss : @registers.ds
+        segment = @segment_override || (use_stack_segment ? @registers.ss : @registers.ds)
         ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(segment, base &+ displacement)))
       end
 

@@ -196,4 +196,20 @@ describe Swanium::Core::Cpu do
     cpu.step(memory)
     memory.writes.should eq([{0x20_u8, 0x5A_u8}])
   end
+
+  it "applies segment overrides to the following ModRM memory instruction" do
+    memory = Swanium::Core::FlatMemory.new
+    # ES: MOV AL,[0x0010]
+    memory.load(0_u32, Bytes[0x26, 0x8A, 0x06, 0x10, 0x00])
+    memory.write_u8(0x0110_u32, 0xAA_u8)
+    memory.write_u8(0x0210_u32, 0xBB_u8)
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ds = 0x0010_u16
+    cpu.registers.es = 0x0020_u16
+
+    cpu.step(memory)
+
+    cpu.registers.reg8(0_u8).should eq(0xBB_u8)
+  end
 end
