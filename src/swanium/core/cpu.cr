@@ -286,6 +286,15 @@ module Swanium
           1_u32
         when 0xA4_u8
           execute_movsb(bus)
+        when 0xAA_u8
+          bus.write_u8(Core.linear_address(@registers.es, @registers.di), @registers.reg8(0_u8))
+          @registers.di &+= @flags.direction ? 0xFFFF_u16 : 1_u16
+          3_u32
+        when 0xAC_u8
+          segment = @segment_override || @registers.ds
+          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(segment, @registers.si)))
+          @registers.si &+= @flags.direction ? 0xFFFF_u16 : 1_u16
+          3_u32
         when 0xA1_u8
           @registers.ax = bus.read_u16(Core.linear_address(@registers.ds, fetch_u16(bus)))
           1_u32
