@@ -304,4 +304,62 @@ describe Swanium::Core::Cpu do
     cpu.registers.ax.should eq(0x1234_u16)
     cpu.flags.carry.should be_true
   end
+
+  it "executes the V30 F6/F7 arithmetic groups" do
+    memory = Swanium::Core::FlatMemory.new
+    # NOT AL ; NEG AL ; MUL CL ; DIV CL ; IMUL CX ; DIV CX
+    memory.load(0_u32, Bytes[0xF6, 0xD0, 0xF6, 0xD8, 0xF6, 0xE1, 0xF6, 0xF1, 0xF7, 0xE9, 0xF7, 0xF1])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 0x000F_u16
+    cpu.flags.carry = true
+
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0xF0_u8)
+    cpu.flags.carry.should be_true
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(0x10_u8)
+    cpu.flags.carry.should be_true
+
+    cpu.registers.ax = 0x0010_u16
+    cpu.registers.cx = 0x0010_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0100_u16)
+    cpu.flags.overflow.should be_true
+
+    cpu.registers.ax = 0x000A_u16
+    cpu.registers.cx = 0x0003_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0103_u16)
+
+    cpu.registers.ax = 0x0002_u16
+    cpu.registers.cx = 0x0003_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x0006_u16)
+    cpu.registers.dx.should eq(0_u16)
+
+    cpu.registers.dx = 0_u16
+    cpu.registers.ax = 10_u16
+    cpu.registers.cx = 3_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(3_u16)
+    cpu.registers.dx.should eq(1_u16)
+  end
+
+  it "dispatches INT0 on divide by zero" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.write_u16(0_u32, 0x3456_u16)
+    memory.write_u16(2_u32, 0x1234_u16)
+    memory.load(0x0200_u32, Bytes[0xF6, 0xF1])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0x0200_u16)
+    cpu.registers.sp = 0x4000_u16
+    cpu.registers.ax = 10_u16
+    cpu.registers.cx = 0_u16
+
+    cpu.step(memory)
+    cpu.registers.cs.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x3456_u16)
+    memory.read_u16(0x3FFA_u32).should eq(0x0202_u16)
+  end
 end

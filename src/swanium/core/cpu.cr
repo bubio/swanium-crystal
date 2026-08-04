@@ -411,6 +411,10 @@ module Swanium
           bus.write_io(port, @registers.reg8(0_u8))
           bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
           4_u32
+        when 0xF6_u8
+          execute_group3_8(bus)
+        when 0xF7_u8
+          execute_group3_16(bus)
         when 0xF4_u8
           @halted = true
           1_u32
@@ -514,6 +518,124 @@ module Swanium
         result = shift16(shift_operation(mod_rm.reg), read_operand16(bus, mod_rm.operand), count)
         write_operand16(bus, mod_rm.operand, result)
         cycles(mod_rm.operand, count == 1_u8 ? 1_u32 : 3_u32, count == 1_u8 ? 3_u32 : 5_u32)
+      end
+
+      private def execute_group3_8(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        case mod_rm.reg
+        when 0_u8
+          logic8(read_operand8(bus, mod_rm.operand) & fetch_u8(bus))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        when 1_u8
+          fetch_u8(bus)
+          1_u32
+        when 2_u8
+          write_operand8(bus, mod_rm.operand, ~read_operand8(bus, mod_rm.operand))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 3_u8
+          value = read_operand8(bus, mod_rm.operand)
+          result = subtract8(0_u8, value, 0_u8)
+          write_operand8(bus, mod_rm.operand, result)
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 4_u8
+          product = @registers.reg8(0_u8).to_u16 * read_operand8(bus, mod_rm.operand).to_u16
+          @registers.ax = product
+          @flags.carry = product > 0x00FF_u16
+          @flags.overflow = @flags.carry
+          cycles(mod_rm.operand, 3_u32, 4_u32)
+        when 5_u8
+          product = signed8(@registers.reg8(0_u8)) * signed8(read_operand8(bus, mod_rm.operand))
+          @registers.ax = (product & 0xFFFF).to_u16
+          @flags.carry = product < -128 || product > 127
+          @flags.overflow = @flags.carry
+          cycles(mod_rm.operand, 3_u32, 4_u32)
+        when 6_u8
+          divisor = read_operand8(bus, mod_rm.operand)
+          dividend = @registers.ax
+          if divisor == 0_u8 || dividend / divisor.to_u16 > 0x00FF_u16
+            service_interrupt(bus, 0_u8)
+          else
+            quotient = (dividend / divisor.to_u16).to_u8
+            remainder = (dividend % divisor.to_u16).to_u8
+            @registers.set_reg8(0_u8, quotient)
+            @registers.set_reg8(4_u8, remainder)
+          end
+          cycles(mod_rm.operand, 15_u32, 24_u32)
+        else
+          divisor = signed8(read_operand8(bus, mod_rm.operand))
+          dividend = signed16(@registers.ax)
+          if divisor == 0
+            service_interrupt(bus, 0_u8)
+          else
+            quotient = dividend // divisor
+            if quotient < -128 || quotient > 127
+              service_interrupt(bus, 0_u8)
+              return cycles(mod_rm.operand, 17_u32, 25_u32)
+            end
+            @registers.set_reg8(0_u8, (quotient & 0xFF).to_u8)
+            @registers.set_reg8(4_u8, ((dividend % divisor) & 0xFF).to_u8)
+          end
+          cycles(mod_rm.operand, 17_u32, 25_u32)
+        end
+      end
+
+      private def execute_group3_16(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        case mod_rm.reg
+        when 0_u8
+          logic16(read_operand16(bus, mod_rm.operand) & fetch_u16(bus))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        when 1_u8
+          fetch_u16(bus)
+          1_u32
+        when 2_u8
+          write_operand16(bus, mod_rm.operand, ~read_operand16(bus, mod_rm.operand))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 3_u8
+          value = read_operand16(bus, mod_rm.operand)
+          result = subtract16(0_u16, value, 0_u16)
+          write_operand16(bus, mod_rm.operand, result)
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 4_u8
+          product = @registers.ax.to_u32 * read_operand16(bus, mod_rm.operand).to_u32
+          @registers.ax = (product & 0xFFFF_u32).to_u16
+          @registers.dx = (product >> 16).to_u16
+          @flags.carry = product > 0xFFFF_u32
+          @flags.overflow = @flags.carry
+          cycles(mod_rm.operand, 3_u32, 4_u32)
+        when 5_u8
+          product = signed16(@registers.ax).to_i64 * signed16(read_operand16(bus, mod_rm.operand)).to_i64
+          @registers.ax = (product & 0xFFFF).to_u16
+          @registers.dx = ((product >> 16) & 0xFFFF).to_u16
+          @flags.carry = product < -32_768 || product > 32_767
+          @flags.overflow = @flags.carry
+          cycles(mod_rm.operand, 3_u32, 4_u32)
+        when 6_u8
+          divisor = read_operand16(bus, mod_rm.operand)
+          dividend = (@registers.dx.to_u32 << 16) | @registers.ax.to_u32
+          if divisor == 0_u16 || dividend / divisor.to_u32 > 0xFFFF_u32
+            service_interrupt(bus, 0_u8)
+          else
+            @registers.ax = (dividend / divisor.to_u32).to_u16
+            @registers.dx = (dividend % divisor.to_u32).to_u16
+          end
+          cycles(mod_rm.operand, 15_u32, 24_u32)
+        else
+          divisor = signed16(read_operand16(bus, mod_rm.operand)).to_i64
+          dividend = signed32((@registers.dx.to_u32 << 16) | @registers.ax.to_u32).to_i64
+          if divisor == 0
+            service_interrupt(bus, 0_u8)
+          else
+            quotient = dividend // divisor
+            if quotient < -32_768 || quotient > 32_767
+              service_interrupt(bus, 0_u8)
+              return cycles(mod_rm.operand, 17_u32, 25_u32)
+            end
+            @registers.ax = (quotient & 0xFFFF).to_u16
+            @registers.dx = ((dividend % divisor) & 0xFFFF).to_u16
+          end
+          cycles(mod_rm.operand, 17_u32, 25_u32)
+        end
       end
 
       private def shift_operation(reg : UInt8) : ShiftOperation
@@ -686,6 +808,18 @@ module Swanium
 
       private def signed_byte(value : UInt8) : UInt16
         value.bit(7) == 1 ? (0xFF00_u16 | value.to_u16) : value.to_u16
+      end
+
+      private def signed8(value : UInt8) : Int16
+        value.bit(7) == 1 ? value.to_i16 - 256 : value.to_i16
+      end
+
+      private def signed16(value : UInt16) : Int32
+        value.bit(15) == 1 ? value.to_i32 - 65_536 : value.to_i32
+      end
+
+      private def signed32(value : UInt32) : Int64
+        value.bit(31) == 1 ? value.to_i64 - 4_294_967_296_i64 : value.to_i64
       end
 
       private def set_zsp8(value : UInt8) : Nil
