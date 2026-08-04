@@ -305,6 +305,20 @@ describe Swanium::Core::Cpu do
     cpu.flags.carry.should be_true
   end
 
+  it "decodes the V30 immediate-count shift operand before its count" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xC0, 0xE0, 0x02, 0xC1, 0xE0, 0x02])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ax = 1_u16
+
+    cpu.step(memory)
+    cpu.registers.reg8(0_u8).should eq(4_u8)
+    cpu.registers.ax = 1_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(4_u16)
+  end
+
   it "executes the V30 F6/F7 arithmetic groups" do
     memory = Swanium::Core::FlatMemory.new
     # NOT AL ; NEG AL ; MUL CL ; DIV CL ; IMUL CX ; DIV CX
@@ -361,5 +375,69 @@ describe Swanium::Core::Cpu do
     cpu.registers.cs.should eq(0x1234_u16)
     cpu.registers.ip.should eq(0x3456_u16)
     memory.read_u16(0x3FFA_u32).should eq(0x0202_u16)
+  end
+
+  it "executes V30 stack extensions and immediate IMUL" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0x60, 0x61, 0x68, 0x34, 0x12, 0x6A, 0xFF, 0x69, 0xC3, 0x03, 0x00, 0x6B, 0xC3, 0xFF])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0xFFFE_u16
+    cpu.registers.ax = 0x1111_u16
+    cpu.registers.di = 0x8888_u16
+
+    cpu.step(memory)
+    cpu.registers.sp.should eq(0xFFEE_u16)
+    memory.read_u16(0xFFFC_u32).should eq(0x1111_u16)
+    memory.read_u16(0xFFEE_u32).should eq(0x8888_u16)
+    cpu.registers.ax = 0_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0x1111_u16)
+    cpu.registers.sp.should eq(0xFFFE_u16)
+
+    cpu.step(memory)
+    memory.read_u16(0xFFFC_u32).should eq(0x1234_u16)
+    cpu.step(memory)
+    memory.read_u16(0xFFFA_u32).should eq(0xFFFF_u16)
+
+    cpu.registers.bx = 5_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(15_u16)
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0xFFFB_u16)
+  end
+
+  it "handles V30 far control transfers, software interrupts, and FF group" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0x9A, 0x20, 0x00, 0x34, 0x12])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ss = 0_u16
+    cpu.registers.sp = 0xFFFE_u16
+
+    cpu.step(memory)
+    cpu.registers.cs.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x0020_u16)
+    memory.read_u16(0xFFFA_u32).should eq(5_u16)
+    memory.read_u16(0xFFFC_u32).should eq(0_u16)
+
+    memory.load(0x12360_u32, Bytes[0xCB])
+    cpu.step(memory)
+    cpu.registers.cs.should eq(0_u16)
+    cpu.registers.ip.should eq(5_u16)
+
+    memory.write_u16(0x000C_u32, 0x0040_u16)
+    memory.write_u16(0x000E_u32, 0x2000_u16)
+    memory.load(5_u32, Bytes[0xCC])
+    cpu.step(memory)
+    cpu.registers.cs.should eq(0x2000_u16)
+    cpu.registers.ip.should eq(0x0040_u16)
+
+    memory.load(0x20040_u32, Bytes[0xFF, 0xD0])
+    cpu.registers.ax = 0x0080_u16
+    cpu.step(memory)
+    cpu.registers.ip.should eq(0x0080_u16)
+    memory.read_u16(cpu.registers.sp.to_u32).should eq(0x0042_u16)
   end
 end

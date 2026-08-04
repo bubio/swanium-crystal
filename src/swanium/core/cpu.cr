@@ -205,6 +205,20 @@ module Swanium
         when 0x58_u8..0x5F_u8
           @registers.set_reg16(opcode & 0x07_u8, pop16(bus))
           1_u32
+        when 0x60_u8
+          execute_pusha(bus)
+        when 0x61_u8
+          execute_popa(bus)
+        when 0x68_u8
+          push16(bus, fetch_u16(bus))
+          1_u32
+        when 0x6A_u8
+          push16(bus, signed_byte(fetch_u8(bus)))
+          1_u32
+        when 0x69_u8
+          execute_imul_immediate16(bus)
+        when 0x6B_u8
+          execute_imul_immediate8(bus)
         when 0x70_u8..0x7F_u8
           relative = signed_byte(fetch_u8(bus))
           if condition?(opcode)
@@ -291,6 +305,14 @@ module Swanium
         when 0x9F_u8
           @registers.set_reg8(4_u8, (@flags.to_u16 & 0x00FF_u16).to_u8)
           2_u32
+        when 0x9A_u8
+          new_ip = fetch_u16(bus)
+          new_cs = fetch_u16(bus)
+          push16(bus, @registers.cs)
+          push16(bus, @registers.ip)
+          @registers.ip = new_ip
+          @registers.cs = new_cs
+          10_u32
         when 0xA0_u8
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, fetch_u16(bus))))
           1_u32
@@ -322,12 +344,38 @@ module Swanium
           @registers.set_reg16(opcode & 0x07_u8, fetch_u16(bus))
           1_u32
         when 0xC0_u8
-          execute_shift8(bus, fetch_u8(bus))
+          execute_shift8_immediate(bus)
         when 0xC1_u8
-          execute_shift16(bus, fetch_u8(bus))
+          execute_shift16_immediate(bus)
+        when 0xC2_u8
+          extra = fetch_u16(bus)
+          @registers.ip = pop16(bus)
+          @registers.sp &+= extra
+          6_u32
         when 0xC3_u8
           @registers.ip = pop16(bus)
           6_u32
+        when 0xCA_u8
+          extra = fetch_u16(bus)
+          @registers.ip = pop16(bus)
+          @registers.cs = pop16(bus)
+          @registers.sp &+= extra
+          9_u32
+        when 0xCB_u8
+          @registers.ip = pop16(bus)
+          @registers.cs = pop16(bus)
+          8_u32
+        when 0xCC_u8
+          service_interrupt(bus, 3_u8)
+        when 0xCD_u8
+          service_interrupt(bus, fetch_u8(bus))
+        when 0xCE_u8
+          @flags.overflow ? service_interrupt(bus, 4_u8) : 6_u32
+        when 0xCF_u8
+          @registers.ip = pop16(bus)
+          @registers.cs = pop16(bus)
+          @flags = Flags.from_u16(pop16(bus))
+          10_u32
         when 0xC6_u8
           mod_rm = decode_mod_rm(bus)
           write_operand8(bus, mod_rm.operand, fetch_u8(bus))
@@ -393,6 +441,10 @@ module Swanium
         when 0xE9_u8
           @registers.ip &+= fetch_u16(bus)
           4_u32
+        when 0xEA_u8
+          @registers.ip = fetch_u16(bus)
+          @registers.cs = fetch_u16(bus)
+          7_u32
         when 0xEB_u8
           @registers.ip &+= signed_byte(fetch_u8(bus))
           4_u32
@@ -415,6 +467,8 @@ module Swanium
           execute_group3_8(bus)
         when 0xF7_u8
           execute_group3_16(bus)
+        when 0xFF_u8
+          execute_group5(bus)
         when 0xF4_u8
           @halted = true
           1_u32
@@ -513,11 +567,27 @@ module Swanium
         cycles(mod_rm.operand, count == 1_u8 ? 1_u32 : 3_u32, count == 1_u8 ? 3_u32 : 5_u32)
       end
 
+      private def execute_shift8_immediate(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        count = fetch_u8(bus)
+        result = shift8(shift_operation(mod_rm.reg), read_operand8(bus, mod_rm.operand), count)
+        write_operand8(bus, mod_rm.operand, result)
+        cycles(mod_rm.operand, 3_u32, 5_u32)
+      end
+
       private def execute_shift16(bus : MemoryBus, count : UInt8) : UInt32
         mod_rm = decode_mod_rm(bus)
         result = shift16(shift_operation(mod_rm.reg), read_operand16(bus, mod_rm.operand), count)
         write_operand16(bus, mod_rm.operand, result)
         cycles(mod_rm.operand, count == 1_u8 ? 1_u32 : 3_u32, count == 1_u8 ? 3_u32 : 5_u32)
+      end
+
+      private def execute_shift16_immediate(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        count = fetch_u8(bus)
+        result = shift16(shift_operation(mod_rm.reg), read_operand16(bus, mod_rm.operand), count)
+        write_operand16(bus, mod_rm.operand, result)
+        cycles(mod_rm.operand, 3_u32, 5_u32)
       end
 
       private def execute_group3_8(bus : MemoryBus) : UInt32
@@ -636,6 +706,95 @@ module Swanium
           end
           cycles(mod_rm.operand, 17_u32, 25_u32)
         end
+      end
+
+      private def execute_pusha(bus : MemoryBus) : UInt32
+        original_sp = @registers.sp
+        push16(bus, @registers.ax)
+        push16(bus, @registers.cx)
+        push16(bus, @registers.dx)
+        push16(bus, @registers.bx)
+        push16(bus, original_sp)
+        push16(bus, @registers.bp)
+        push16(bus, @registers.si)
+        push16(bus, @registers.di)
+        9_u32
+      end
+
+      private def execute_popa(bus : MemoryBus) : UInt32
+        @registers.di = pop16(bus)
+        @registers.si = pop16(bus)
+        @registers.bp = pop16(bus)
+        pop16(bus)
+        @registers.bx = pop16(bus)
+        @registers.dx = pop16(bus)
+        @registers.cx = pop16(bus)
+        @registers.ax = pop16(bus)
+        8_u32
+      end
+
+      private def execute_imul_immediate16(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        immediate = fetch_u16(bus)
+        execute_imul_immediate(bus, mod_rm, immediate)
+      end
+
+      private def execute_imul_immediate8(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        execute_imul_immediate(bus, mod_rm, signed_byte(fetch_u8(bus)))
+      end
+
+      private def execute_imul_immediate(bus : MemoryBus, mod_rm : ModRm, immediate : UInt16) : UInt32
+        product = signed16(read_operand16(bus, mod_rm.operand)).to_i64 * signed16(immediate).to_i64
+        @registers.set_reg16(mod_rm.reg, (product & 0xFFFF).to_u16)
+        @flags.carry = product < -32_768 || product > 32_767
+        @flags.overflow = @flags.carry
+        cycles(mod_rm.operand, 3_u32, 4_u32)
+      end
+
+      private def execute_group5(bus : MemoryBus) : UInt32
+        mod_rm = decode_mod_rm(bus)
+        case mod_rm.reg
+        when 0_u8
+          write_operand16(bus, mod_rm.operand, increment16(read_operand16(bus, mod_rm.operand)))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 1_u8
+          write_operand16(bus, mod_rm.operand, decrement16(read_operand16(bus, mod_rm.operand)))
+          cycles(mod_rm.operand, 1_u32, 3_u32)
+        when 2_u8
+          target = read_operand16(bus, mod_rm.operand)
+          push16(bus, @registers.ip)
+          @registers.ip = target
+          cycles(mod_rm.operand, 5_u32, 6_u32)
+        when 3_u8
+          return unsupported_group5 unless address = mod_rm.operand.memory?
+          new_ip = bus.read_u16(address)
+          new_cs = bus.read_u16(address &+ 2_u32)
+          push16(bus, @registers.cs)
+          push16(bus, @registers.ip)
+          @registers.ip = new_ip
+          @registers.cs = new_cs
+          9_u32
+        when 4_u8
+          @registers.ip = read_operand16(bus, mod_rm.operand)
+          cycles(mod_rm.operand, 3_u32, 5_u32)
+        when 5_u8
+          return unsupported_group5 unless address = mod_rm.operand.memory?
+          @registers.ip = bus.read_u16(address)
+          @registers.cs = bus.read_u16(address &+ 2_u32)
+          9_u32
+        when 6_u8
+          push16(bus, read_operand16(bus, mod_rm.operand))
+          cycles(mod_rm.operand, 1_u32, 2_u32)
+        else
+          unsupported_group5
+        end
+      end
+
+      private def unsupported_group5 : UInt32
+        @fault_opcode = 0xFF_u8
+        @halted = true
+        1_u32
       end
 
       private def shift_operation(reg : UInt8) : ShiftOperation
