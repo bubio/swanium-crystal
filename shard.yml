@@ -1,0 +1,13 @@
+name: swanium
+version: 0.1.0
+
+authors:
+  - Swanium Crystal contributors
+
+targets:
+  swanium:
+    main: src/swanium.cr
+
+crystal: ">= 1.18.2"
+
+license: MIT

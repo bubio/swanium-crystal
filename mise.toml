@@ -1,0 +1,33 @@
+[tools]
+# Crystal is installed by mise. LLVM ships with Crystal's official distribution;
+# SDL2 remains a system library because it must match the host window system.
+crystal = "1.18.2"
+
+[vars]
+llvm_version = "15.0.7"
+sdl2_version = "2.32.70"
+
+[tasks.format]
+description = "Format Crystal source and specs"
+run = "crystal tool format src spec"
+
+[tasks.setup]
+description = "Install managed tools and verify the required SDL2 development library"
+run = "mise install && sdl2-config --version"
+
+[tasks.test]
+description = "Run the headless test suite"
+run = "crystal spec"
+
+[tasks.build]
+description = "Build the command-line application"
+run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium"
+
+[tasks.check]
+description = "Check formatting and run tests"
+depends = ["test"]
+run = "crystal tool format --check src spec"
+
+[tasks.sdl-smoke]
+description = "Create an SDL2 window briefly (requires a desktop session)"
+run = "crystal run src/swanium.cr -- --sdl-smoke"
