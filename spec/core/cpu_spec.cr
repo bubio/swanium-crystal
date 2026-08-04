@@ -440,4 +440,52 @@ describe Swanium::Core::Cpu do
     cpu.registers.ip.should eq(0x0080_u16)
     memory.read_u16(cpu.registers.sp.to_u32).should eq(0x0042_u16)
   end
+
+  it "executes V30 word strings, comparisons, and REP conditions" do
+    memory = Swanium::Core::FlatMemory.new
+    # MOVSW ; CMPSB ; STOSW ; LODSW ; SCASB ; REPNE SCASB
+    memory.load(0_u32, Bytes[0xA5, 0xA6, 0xAB, 0xAD, 0xAE, 0xF2, 0xAE])
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.ds = 0_u16
+    cpu.registers.es = 0_u16
+    cpu.registers.si = 0x0100_u16
+    cpu.registers.di = 0x0200_u16
+    memory.write_u16(0x0100_u32, 0xBEEF_u16)
+
+    cpu.step(memory)
+    memory.read_u16(0x0200_u32).should eq(0xBEEF_u16)
+    cpu.registers.si.should eq(0x0102_u16)
+    cpu.registers.di.should eq(0x0202_u16)
+
+    cpu.registers.si = 0x0110_u16
+    cpu.registers.di = 0x0210_u16
+    memory.write_u8(0x0110_u32, 0x33_u8)
+    memory.write_u8(0x0210_u32, 0x33_u8)
+    cpu.step(memory)
+    cpu.flags.zero.should be_true
+
+    cpu.registers.ax = 0xCAFE_u16
+    cpu.registers.di = 0x0300_u16
+    cpu.step(memory)
+    memory.read_u16(0x0300_u32).should eq(0xCAFE_u16)
+    cpu.registers.si = 0x0300_u16
+    cpu.step(memory)
+    cpu.registers.ax.should eq(0xCAFE_u16)
+
+    cpu.registers.ax = 0x0042_u16
+    cpu.registers.di = 0x0400_u16
+    memory.write_u8(0x0400_u32, 0x42_u8)
+    cpu.step(memory)
+    cpu.flags.zero.should be_true
+
+    cpu.registers.di = 0x0500_u16
+    cpu.registers.cx = 5_u16
+    cpu.registers.ax = 0x00FF_u16
+    memory.load(0x0500_u32, Bytes[1, 2, 3, 0xFF, 5])
+    cpu.step(memory)
+    cpu.flags.zero.should be_true
+    cpu.registers.cx.should eq(1_u16)
+    cpu.registers.di.should eq(0x0504_u16)
+  end
 end

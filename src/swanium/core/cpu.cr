@@ -317,11 +317,13 @@ module Swanium
           @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(@registers.ds, fetch_u16(bus))))
           1_u32
         when 0xA4_u8
-          execute_movsb(bus)
+          execute_string(bus, opcode)
+        when 0xA5_u8, 0xA6_u8, 0xA7_u8
+          execute_string(bus, opcode)
         when 0xAA_u8
-          execute_stosb(bus)
-        when 0xAC_u8
-          execute_lodsb(bus)
+          execute_string(bus, opcode)
+        when 0xAB_u8, 0xAC_u8, 0xAD_u8, 0xAE_u8, 0xAF_u8
+          execute_string(bus, opcode)
         when 0xA1_u8
           @registers.ax = bus.read_u16(Core.linear_address(@registers.ds, fetch_u16(bus)))
           1_u32
@@ -1124,6 +1126,79 @@ module Swanium
         end
         @registers.cx = 0_u16 if @repeat_prefix
         5_u32 * iterations.to_u32
+      end
+
+      private def execute_string(bus : MemoryBus, opcode : UInt8) : UInt32
+        iterations = @repeat_prefix ? @registers.cx : 1_u16
+        return 0_u32 if iterations == 0_u16
+
+        source_segment = @segment_override || @registers.ds
+        total_cycles = 0_u32
+        iterations.times do
+          string_step(bus, opcode, source_segment)
+          total_cycles += string_cycles(opcode)
+          if @repeat_prefix
+            @registers.cx &-= 1_u16
+            if string_comparison?(opcode)
+              break if @repeat_prefix == 0xF3_u8 && !@flags.zero
+              break if @repeat_prefix == 0xF2_u8 && @flags.zero
+            end
+          end
+        end
+        total_cycles
+      end
+
+      private def string_step(bus : MemoryBus, opcode : UInt8, source_segment : UInt16) : Nil
+        wide = opcode.bit(0) == 1
+        delta = @flags.direction ? (wide ? 0xFFFE_u16 : 0xFFFF_u16) : (wide ? 2_u16 : 1_u16)
+        source_address = Core.linear_address(source_segment, @registers.si)
+        destination_address = Core.linear_address(@registers.es, @registers.di)
+
+        case opcode
+        when 0xA4_u8
+          bus.write_u8(destination_address, bus.read_u8(source_address))
+          @registers.si &+= delta; @registers.di &+= delta
+        when 0xA5_u8
+          bus.write_u16(destination_address, bus.read_u16(source_address))
+          @registers.si &+= delta; @registers.di &+= delta
+        when 0xA6_u8
+          subtract8(bus.read_u8(source_address), bus.read_u8(destination_address), 0_u8)
+          @registers.si &+= delta; @registers.di &+= delta
+        when 0xA7_u8
+          subtract16(bus.read_u16(source_address), bus.read_u16(destination_address), 0_u16)
+          @registers.si &+= delta; @registers.di &+= delta
+        when 0xAA_u8
+          bus.write_u8(destination_address, @registers.reg8(0_u8))
+          @registers.di &+= delta
+        when 0xAB_u8
+          bus.write_u16(destination_address, @registers.ax)
+          @registers.di &+= delta
+        when 0xAC_u8
+          @registers.set_reg8(0_u8, bus.read_u8(source_address))
+          @registers.si &+= delta
+        when 0xAD_u8
+          @registers.ax = bus.read_u16(source_address)
+          @registers.si &+= delta
+        when 0xAE_u8
+          subtract8(@registers.reg8(0_u8), bus.read_u8(destination_address), 0_u8)
+          @registers.di &+= delta
+        when 0xAF_u8
+          subtract16(@registers.ax, bus.read_u16(destination_address), 0_u16)
+          @registers.di &+= delta
+        end
+      end
+
+      private def string_cycles(opcode : UInt8) : UInt32
+        case opcode
+        when 0xA4_u8, 0xA5_u8                   then 5_u32
+        when 0xA6_u8, 0xA7_u8                   then 6_u32
+        when 0xAA_u8, 0xAB_u8, 0xAC_u8, 0xAD_u8 then 3_u32
+        else                                         4_u32
+        end
+      end
+
+      private def string_comparison?(opcode : UInt8) : Bool
+        opcode == 0xA6_u8 || opcode == 0xA7_u8 || opcode == 0xAE_u8 || opcode == 0xAF_u8
       end
 
       private def execute_stosb(bus : MemoryBus) : UInt32
