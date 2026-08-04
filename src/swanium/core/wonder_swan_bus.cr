@@ -14,6 +14,19 @@ module Swanium
       end
     end
 
+    # Bit positions in the WonderSwan INT_CAUSE / INT_ENABLE registers.
+    # Higher-numbered sources have higher arbitration priority.
+    enum WonderSwanInterrupt : UInt8
+      SerialReceive = 0
+      KeyPress      = 1
+      Cartridge     = 2
+      DmaComplete   = 3
+      ScanlineMatch = 4
+      VBlankTimer   = 5
+      VBlank        = 6
+      HBlankTimer   = 7
+    end
+
     # Platform-neutral first hardware bus. It models the CPU-visible address
     # map and cartridge bank registers while PPU/APU/DMA devices are added on
     # top through the same I/O port file.
@@ -59,11 +72,13 @@ module Swanium
         # Hardware-only/read-only ports will gain device-specific handlers;
         # unknown ports intentionally retain open-bus behavior.
         case port
-        when 0xC0_u8 then @linear_offset
-        when 0xC1_u8 then @ram_bank
-        when 0xC2_u8 then @rom_bank0
-        when 0xC3_u8 then @rom_bank1
-        else              @ports[port]
+        when 0xC0_u8          then @linear_offset
+        when 0xC1_u8          then @ram_bank
+        when 0xC2_u8          then @rom_bank0
+        when 0xC3_u8          then @rom_bank1
+        when 0xA2_u8, 0xA3_u8 then @ports[port] & 0x0F_u8
+        when 0xB0_u8          then @ports[port] & 0xF8_u8
+        else                       @ports[port]
         end
       end
 
@@ -81,8 +96,64 @@ module Swanium
         when 0xC3_u8
           @rom_bank1 = value
           @ports[port] = value
+        when 0xA2_u8, 0xA3_u8
+          @ports[port] = value & 0x0F_u8
+        when 0xA4_u8, 0xA5_u8, 0xA6_u8, 0xA7_u8
+          @ports[port] = value
+          @ports[port &+ 4_u8] = value
+        when 0xA8_u8..0xAB_u8, 0xB1_u8, 0xB4_u8
+          # Hardware-maintained counters and INT_CAUSE are read-only.
+        when 0xB0_u8
+          @ports[port] = value & 0xF8_u8
+        when 0xB2_u8
+          @ports[port] = value
+        when 0xB3_u8
+          @ports[port] = value & 0xC4_u8
+        when 0xB6_u8
+          @ports[port] = value
+          @ports[0xB4] &= ~value
         else
           @ports[port] = value
+        end
+      end
+
+      def request_interrupt(source : WonderSwanInterrupt) : Nil
+        @ports[0xB4] |= (1_u8 << source.value) & @ports[0xB2]
+      end
+
+      def pending_interrupt_vector? : UInt8?
+        7.downto(0) do |priority|
+          return @ports[0xB0] &+ priority.to_u8 if @ports[0xB4].bit(priority) == 1
+        end
+        nil
+      end
+
+      # Called by the LCD scheduler at the beginning of HBlank.
+      def on_hblank : Nil
+        counter = read_port_u16(0xA8_u8)
+        return if counter == 0_u16 || (@ports[0xA2] & 0x01_u8) == 0_u8
+
+        if counter == 1_u16
+          request_interrupt(WonderSwanInterrupt::HBlankTimer)
+          reload = (@ports[0xA2] & 0x02_u8) == 0_u8 ? 0_u16 : read_port_u16(0xA4_u8)
+          write_counter(0xA8_u8, reload)
+        else
+          write_counter(0xA8_u8, counter - 1_u16)
+        end
+      end
+
+      # Called by the LCD scheduler on the VBlank transition.
+      def on_vblank : Nil
+        request_interrupt(WonderSwanInterrupt::VBlank)
+        counter = read_port_u16(0xAA_u8)
+        return if counter == 0_u16 || (@ports[0xA2] & 0x04_u8) == 0_u8
+
+        if counter == 1_u16
+          request_interrupt(WonderSwanInterrupt::VBlankTimer)
+          reload = (@ports[0xA2] & 0x08_u8) == 0_u8 ? 0_u16 : read_port_u16(0xA6_u8)
+          write_counter(0xAA_u8, reload)
+        else
+          write_counter(0xAA_u8, counter - 1_u16)
         end
       end
 
@@ -119,6 +190,15 @@ module Swanium
 
       private def bank_index(bank : UInt8, address : UInt32, size : Int) : Int
         (((bank.to_u64 << 16) | (address & 0xFFFF_u32).to_u64) % size.to_u64).to_i
+      end
+
+      private def read_port_u16(port : UInt8) : UInt16
+        @ports[port].to_u16 | (@ports[port &+ 1_u8].to_u16 << 8)
+      end
+
+      private def write_counter(port : UInt8, value : UInt16) : Nil
+        @ports[port] = (value & 0x00FF_u16).to_u8
+        @ports[port &+ 1_u8] = (value >> 8).to_u8
       end
     end
   end

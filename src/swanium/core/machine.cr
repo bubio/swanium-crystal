@@ -41,6 +41,19 @@ module Swanium
         @cycles += cycles
         cycles
       end
+
+      # Run one CPU instruction and acknowledge the WonderSwan bus's
+      # highest-priority enabled request at the following instruction boundary.
+      def step_wonder_swan(bus : WonderSwanBus) : UInt32
+        cycles = @cpu.step(bus)
+        if @cpu.flags.interrupt
+          if vector = bus.pending_interrupt_vector?
+            cycles += @cpu.service_interrupt(bus, vector)
+          end
+        end
+        @cycles += cycles
+        cycles
+      end
     end
   end
 end
