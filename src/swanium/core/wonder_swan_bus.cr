@@ -90,6 +90,14 @@ module Swanium
         # Hardware-only/read-only ports will gain device-specific handlers;
         # unknown ports intentionally retain open-bus behavior.
         case port
+        when 0x00_u8          then @ports[port] & 0x3F_u8
+        when 0x01_u8          then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x07_u8
+        when 0x04_u8          then @ports[port] & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
+        when 0x05_u8          then @ports[port] & 0x7F_u8
+        when 0x07_u8          then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x77_u8
+        when 0x15_u8          then @ports[port] & 0x3F_u8
+        when 0x19_u8, 0x1B_u8 then 0_u8
+        when 0x20_u8..0x3F_u8 then @ports[port] & mono_palette_port_mask(port)
         when 0xC0_u8          then @linear_offset
         when 0xC1_u8          then @ram_bank
         when 0xC2_u8          then @rom_bank0
@@ -111,6 +119,21 @@ module Swanium
 
       def write_io(port : UInt8, value : UInt8) : Nil
         case port
+        when 0x00_u8
+          @ports[port] = value & 0x3F_u8
+        when 0x02_u8
+          # LCD line is maintained by the display scheduler.
+        when 0x04_u8
+          @ports[port] = value & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
+        when 0x05_u8
+          @ports[port] = value & 0x7F_u8
+        when 0x07_u8
+          @ports[port] = value & (color_rendering_enabled? ? 0xFF_u8 : 0x77_u8)
+        when 0x15_u8
+          @ports[port] = value & 0x3F_u8
+        when 0x19_u8, 0x1B_u8
+        when 0x20_u8..0x3F_u8
+          @ports[port] = value & mono_palette_port_mask(port)
         when 0xC0_u8
           @linear_offset = value & 0x3F_u8
           @ports[port] = @linear_offset
@@ -325,6 +348,21 @@ module Swanium
           return priority.to_u8 if @ports[0xB4].bit(priority) == 1
         end
         0_u8
+      end
+
+      private def color_rendering_enabled? : Bool
+        @model.color? && (@ports[0x60] & 0x80_u8) != 0_u8
+      end
+
+      private def mono_palette_port_mask(port : UInt8) : UInt8
+        case port
+        when 0x20_u8..0x27_u8, 0x30_u8..0x37_u8
+          0x77_u8
+        when 0x28_u8..0x2F_u8, 0x38_u8..0x3F_u8
+          (port & 1_u8) == 0_u8 ? 0x70_u8 : 0x77_u8
+        else
+          0xFF_u8
+        end
       end
     end
   end

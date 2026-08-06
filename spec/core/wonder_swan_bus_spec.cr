@@ -1,6 +1,27 @@
 require "../spec_helper"
 
 describe Swanium::Core::WonderSwanBus do
+  it "applies LCD, map, sprite, and monochrome palette port masks" do
+    mono = Swanium::Core::WonderSwanBus.new
+    mono.write_io(0x00_u8, 0xFF_u8)
+    mono.write_io(0x04_u8, 0xFF_u8)
+    mono.write_io(0x05_u8, 0xFF_u8)
+    mono.write_io(0x07_u8, 0xFF_u8)
+    mono.write_io(0x28_u8, 0xFF_u8)
+    mono.read_io(0x00_u8).should eq(0x3F_u8)
+    mono.read_io(0x04_u8).should eq(0x1F_u8)
+    mono.read_io(0x05_u8).should eq(0x7F_u8)
+    mono.read_io(0x07_u8).should eq(0x77_u8)
+    mono.read_io(0x28_u8).should eq(0x70_u8)
+
+    color = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Color)
+    color.write_io(0x60_u8, 0x80_u8)
+    color.write_io(0x04_u8, 0xFF_u8)
+    color.write_io(0x07_u8, 0xFF_u8)
+    color.read_io(0x04_u8).should eq(0x3F_u8)
+    color.read_io(0x07_u8).should eq(0xFF_u8)
+  end
+
   it "maps mono and Color internal RAM windows" do
     mono = Swanium::Core::WonderSwanBus.new
     mono.write_u8(0x03FFF_u32, 0x12_u8)

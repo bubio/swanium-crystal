@@ -43,6 +43,10 @@ depends = ["ci"]
 description = "Create an SDL2 window briefly (requires a desktop session)"
 run = "crystal run src/swanium.cr -- --sdl-smoke"
 
+[tasks.video-demo]
+description = "Run the 60 fps display and keyboard/gamepad input test"
+run = "crystal run src/swanium.cr -- --video-demo"
+
 [tasks.wscputest]
 description = "Opt-in WSCPUTest headless diagnostic (requires WS_CPU_TEST_ROM)"
 run = "crystal run tools/run_wscputest.cr"

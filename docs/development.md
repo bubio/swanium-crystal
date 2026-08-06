@@ -11,7 +11,7 @@ mise run ci
 
 Crystal は mise が導入する。SDL2 は OS の開発ライブラリを使うため、macOS では `brew install sdl2`、Ubuntu では `sudo apt install libsdl2-dev` を一度だけ実行する。固定対象の LLVM は Crystal 1.18.2 公式配布物に同梱される版（15.0.7）、SDL2 は 2.32.70 であり、`mise.toml` の `vars` に記録する。
 
-`mise run ci` は整形チェック、headless spec、ビルドを実行する。整形を適用する場合は `mise run format-fix` を使う。`mise run sdl-smoke` はデスクトップセッションで SDL2 のウィンドウ作成を確認する。CI とコアの spec はヘッドレスで実行できる。
+`mise run ci` は整形チェック、headless spec、ビルドを実行する。整形を適用する場合は `mise run format-fix` を使う。`mise run sdl-smoke` はデスクトップセッションでSDL2のウィンドウ作成を確認し、`mise run video-demo` は実際の映像と入力を確認する。CIとコアのspecはヘッドレスで実行できる。
 
 公開CPUテストROMはリポジトリに含めない。ローカルでのみ `WS_CPU_TEST_ROM=/path/to/WSCpuTest.wsc mise run wscputest` を実行できる。これは WSCpuTest v0.7.1 のソースに従い、Color 機として 8 フレーム待機し、A を 1 フレーム入力して `Test All` を選ぶ。以後 BG タイルマップ（WRAM `0x1000`）の `Ok!` / `Failed!` とテスト中フラグ（`0x0136`）を判定する。必要なら `WS_CPU_TEST_MAX_FRAMES`（既定 13500）で上限を変更できる。
 

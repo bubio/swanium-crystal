@@ -71,6 +71,9 @@ describe Swanium::Core::Machine do
     machine.scanline.should eq(0_u16)
     machine.cycles.should eq(Swanium::Core::Machine::CYCLES_PER_FRAME)
     bus.keys.should eq(Swanium::Core::WonderSwanKey::A)
+    bus.read_io(0x02_u8).should eq(158_u8)
+    machine.ppu.current_line.should eq(143_u8)
+    machine.framebuffer_rgba.size.should eq(Swanium::Core::Ppu::PIXEL_COUNT * 4)
   end
 
   it "delays a pending maskable interrupt for one instruction after STI" do

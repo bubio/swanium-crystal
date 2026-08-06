@@ -1,5 +1,6 @@
 require "./cpu"
 require "./interrupt_controller"
+require "./ppu"
 require "./timer"
 require "./wonder_swan_bus"
 
@@ -16,12 +17,14 @@ module Swanium
       getter cycles : UInt64
       getter cpu : Cpu
       getter interrupts : InterruptController
+      getter ppu : Ppu
       getter scanline : UInt16
 
       def initialize
         @cycles = 0_u64
         @cpu = Cpu.new
         @interrupts = InterruptController.new
+        @ppu = Ppu.new
         @scanline_cycles = 0_u32
         @scanline = 0_u16
       end
@@ -70,6 +73,7 @@ module Swanium
       # schedule as a frontend would.
       def run_wonder_swan_frame(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
         bus.set_keys(keys)
+        @ppu.latch_sprites_if_needed(bus.work_ram, bus.ports)
         target_cycles = @cycles + CYCLES_PER_FRAME
         while @cycles < target_cycles
           step_wonder_swan(bus)
@@ -80,12 +84,23 @@ module Swanium
         @scanline_cycles += cycles
         while @scanline_cycles >= CYCLES_PER_SCANLINE
           @scanline_cycles -= CYCLES_PER_SCANLINE
-          bus.on_hblank
-          @scanline &+= 1_u16
-          @scanline = 0_u16 if @scanline == SCANLINES_PER_FRAME
+          if @scanline < VISIBLE_SCANLINES
+            @ppu.capture_next_frame_sprites(bus.work_ram, bus.ports) if @scanline == VISIBLE_SCANLINES - 2
+            @ppu.render_scanline(@scanline.to_u8, bus.work_ram, bus.ports, bus.model.color?)
+          end
           bus.set_current_scanline(@scanline.to_u8)
+          bus.on_hblank
           bus.on_vblank if @scanline == VISIBLE_SCANLINES
+          @scanline &+= 1_u16
+          if @scanline == SCANLINES_PER_FRAME
+            @scanline = 0_u16
+            @ppu.promote_next_frame_sprites
+          end
         end
+      end
+
+      def framebuffer_rgba : Bytes
+        @ppu.framebuffer_rgba
       end
     end
   end
