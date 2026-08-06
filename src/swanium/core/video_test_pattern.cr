@@ -86,8 +86,10 @@ module Swanium
         vertical = 0
         vertical -= 2 if (keys & WonderSwanKey::X4) != 0
         vertical += 2 if (keys & WonderSwanKey::X2) != 0
-        bus.write_io(0x10_u8, horizontal.to_u8)
-        bus.write_io(0x11_u8, vertical.to_u8)
+        # Scroll registers wrap modulo 256. Negative directions therefore use
+        # 254 (-2), not a checked signed-to-UInt8 conversion.
+        bus.write_io(0x10_u8, (horizontal & 0xFF).to_u8)
+        bus.write_io(0x11_u8, (vertical & 0xFF).to_u8)
         ppu.latch_sprites_if_needed(bus.work_ram, bus.ports)
         line = 0
         while line < Ppu::SCREEN_HEIGHT

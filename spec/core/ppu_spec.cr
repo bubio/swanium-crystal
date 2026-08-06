@@ -120,4 +120,24 @@ describe Swanium::Core::Ppu do
     moved.should_not eq(idle)
     bus.keys.should eq(Swanium::Core::WonderSwanKey::X1)
   end
+
+  it "wraps all four directional scroll inputs without conversion errors" do
+    cases = [
+      {Swanium::Core::WonderSwanKey::X1, 2_u8, 0_u8},
+      {Swanium::Core::WonderSwanKey::X2, 0_u8, 2_u8},
+      {Swanium::Core::WonderSwanKey::X3, 254_u8, 0_u8},
+      {Swanium::Core::WonderSwanKey::X4, 0_u8, 254_u8},
+    ]
+
+    cases.each do |key, expected_x, expected_y|
+      bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+      ppu = Swanium::Core::Ppu.new
+      Swanium::Core::VideoTestPattern.configure(bus)
+
+      Swanium::Core::VideoTestPattern.render(ppu, bus, key)
+
+      bus.read_io(0x10_u8).should eq(expected_x)
+      bus.read_io(0x11_u8).should eq(expected_y)
+    end
+  end
 end
