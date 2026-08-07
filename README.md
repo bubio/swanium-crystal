@@ -9,7 +9,7 @@ mise run build
 ./bin/swanium-crystal --version
 ```
 
-SDL2 の導入確認には、デスクトップ環境で `mise run sdl-smoke` を実行します。実 ROM、BIOS、商用ゲームデータは扱いません。詳細は [開発計画](docs/development-plan.md)、[設計](docs/architecture.md)、[テスト](docs/testing.md)、[開発規約](docs/development.md)、[ライセンス方針](docs/licensing.md) を参照してください。
+SDL2 の導入確認には、デスクトップ環境で `mise run sdl-smoke` を実行します。通常 CI は自作 fixture だけを使います。公開テスト ROM はローカルで `WS_CPU_TEST_ROM=/path/to/WSCpuTest.wsc mise run public-roms` として opt-in 検証でき、ROM 本体はリポジトリや CI に含めません。詳細は [開発計画](docs/development-plan.md)、[設計](docs/architecture.md)、[テスト](docs/testing.md)、[開発規約](docs/development.md)、[ライセンス方針](docs/licensing.md) を参照してください。
 
 画面と入力の自作検証プログラムは次のコマンドで起動し、Escapeまたはウィンドウを閉じると終了します。
 

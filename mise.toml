@@ -32,7 +32,7 @@ description = "Build the command-line application"
 run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium-crystal"
 
 [tasks.ci]
-description = "Run the complete CI verification suite"
+description = "Run the repository CI suite with self-contained fixtures only"
 depends = ["format", "spec", "build"]
 
 [tasks.check]
@@ -50,3 +50,7 @@ run = "crystal run src/swanium.cr -- --video-demo"
 [tasks.wscputest]
 description = "Opt-in WSCPUTest headless diagnostic (requires WS_CPU_TEST_ROM)"
 run = "crystal run tools/run_wscputest.cr"
+
+[tasks.public-roms]
+description = "Run opt-in public-ROM verification locally (requires the documented ROM environment variables)"
+depends = ["wscputest"]
