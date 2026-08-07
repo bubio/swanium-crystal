@@ -48,6 +48,19 @@ describe Swanium::Core::Apu do
     ports[0x8E].bit(3).should eq(0)
   end
 
+  it "advances the noise LFSR for CPU readback while channel four is muted" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    ports[0x8E] = 0x10_u8 # Noise gate only; channel 4 output stays muted.
+    ports[0x90] = 0x08_u8
+
+    apu.tick(1_u32, wram, ports)
+
+    ports[0x92].should eq(1_u8)
+    ports[0x93].should eq(0_u8)
+  end
+
   it "matches headless APU advancement with instruction-driven machine advancement" do
     direct = Swanium::Core::Apu.new
     direct_wram = Bytes.new(0x10000, 0_u8)

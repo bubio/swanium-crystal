@@ -121,7 +121,11 @@ module Swanium
           ports[0x8E] &= 0xF7_u8
           @noise_counter = 2048_u16 - read_pitch(ports, 3)
         end
-        return if (noise & 0x10_u8) == 0_u8 || (ports[0x90] & 0x88_u8) != 0x88_u8
+        # The CPU-visible LFSR at 0x92/0x93 is a cartridge-visible random
+        # source, not merely an audible channel-4 implementation detail.
+        # Clock Tower reads it while loading with channel 4 muted; holding it
+        # then leaves the game permanently on its black loading screen.
+        return if (noise & 0x10_u8) == 0_u8
         @noise_counter &-= 1_u16 if @noise_counter > 0_u16
         return unless @noise_counter == 0_u16
 

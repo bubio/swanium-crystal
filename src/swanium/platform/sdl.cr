@@ -392,16 +392,17 @@ module Swanium
       private def self.input_state(controller : Void*) : Tuple(UInt16, Bool)
         state = LibSDL.get_keyboard_state(Pointer(Int32).null)
         keys = 0_u16
-        keys |= Core::WonderSwanKey::X1 if state[SC_RIGHT] != 0
-        keys |= Core::WonderSwanKey::X2 if state[SC_DOWN] != 0
-        keys |= Core::WonderSwanKey::X3 if state[SC_LEFT] != 0
-        keys |= Core::WonderSwanKey::X4 if state[SC_UP] != 0
-        keys |= Core::WonderSwanKey::Y1 if state[SC_D] != 0
-        keys |= Core::WonderSwanKey::Y2 if state[SC_S] != 0
-        keys |= Core::WonderSwanKey::Y3 if state[SC_A] != 0
-        keys |= Core::WonderSwanKey::Y4 if state[SC_W] != 0
-        keys |= Core::WonderSwanKey::A if state[SC_Z] != 0
-        keys |= Core::WonderSwanKey::B if state[SC_X] != 0
+        # Match Swanium's established horizontal default bindings exactly.
+        keys |= Core::WonderSwanKey::X1 if state[SC_UP] != 0
+        keys |= Core::WonderSwanKey::X2 if state[SC_RIGHT] != 0
+        keys |= Core::WonderSwanKey::X3 if state[SC_DOWN] != 0
+        keys |= Core::WonderSwanKey::X4 if state[SC_LEFT] != 0
+        keys |= Core::WonderSwanKey::Y1 if state[SC_W] != 0
+        keys |= Core::WonderSwanKey::Y2 if state[SC_D] != 0
+        keys |= Core::WonderSwanKey::Y3 if state[SC_S] != 0
+        keys |= Core::WonderSwanKey::Y4 if state[SC_A] != 0
+        keys |= Core::WonderSwanKey::A if state[SC_X] != 0
+        keys |= Core::WonderSwanKey::B if state[SC_Z] != 0
         keys |= Core::WonderSwanKey::Start if state[SC_RETURN] != 0
         unless controller.null?
           keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, 0) != 0
