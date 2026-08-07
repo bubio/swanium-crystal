@@ -37,7 +37,7 @@ run = "mkdir -p bin && crystal build --link-flags '-Wl,-headerpad_max_install_na
 
 [tasks.ci]
 description = "Run the repository CI suite with self-contained fixtures only"
-depends = ["format", "spec", "build"]
+depends = ["format", "spec", "build", "headless-fixture", "sdl-smoke-ci"]
 
 [tasks.check]
 description = "Backward-compatible alias for the CI verification suite"
@@ -46,6 +46,15 @@ depends = ["ci"]
 [tasks.sdl-smoke]
 description = "Create an SDL2 window briefly (requires a desktop session)"
 run = "crystal run src/swanium.cr -- --sdl-smoke"
+
+[tasks.sdl-smoke-ci]
+description = "Verify SDL2 initialization through its headless dummy video driver"
+run = "SDL_VIDEODRIVER=dummy crystal run src/swanium.cr -- --sdl-smoke"
+
+[tasks.headless-fixture]
+description = "Run the built CLI against a generated, copyright-free cartridge fixture"
+depends = ["build"]
+run = "crystal run tools/run_headless_fixture.cr -- bin/swanium-crystal"
 
 [tasks.video-demo]
 description = "Run the 60 fps video, input, audio, save-state, and debugger test"
