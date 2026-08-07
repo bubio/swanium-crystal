@@ -1,4 +1,5 @@
 require "./memory_bus"
+require "./cartridge"
 
 module Swanium
   module Core
@@ -57,11 +58,19 @@ module Swanium
       getter ram_bank : UInt8
       getter rom_bank0 : UInt8
       getter rom_bank1 : UInt8
+      getter cartridge_header : CartridgeHeader?
 
-      def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono)
+      def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono,
+                     @cartridge_header : CartridgeHeader? = nil, @save_ram_mapped : Bool = true)
         raise ArgumentError.new("save RAM size must not be negative") if save_ram_size < 0
         @work_ram = Bytes.new(0x10000, 0_u8)
         @save_ram = Bytes.new(save_ram_size, 0_u8)
+        if @cartridge_header && @cartridge_header.not_nil!.save_medium.in?(SaveMedium::Eeprom128B, SaveMedium::Eeprom1KiB, SaveMedium::Eeprom2KiB)
+          @save_ram.fill(0xFF_u8)
+          @eeprom = CartridgeEeprom.new(@save_ram, eeprom_address_bits(@save_ram.size))
+        else
+          @eeprom = nil
+        end
         @ports = Bytes.new(0x100, 0_u8)
         @linear_offset = 0xFF_u8
         @ram_bank = 0xFF_u8
@@ -69,6 +78,17 @@ module Swanium
         @rom_bank1 = 0xFF_u8
         @keys = 0_u16
         @pending_wait_cycles = 0_u32
+      end
+
+      def self.from_cartridge(cartridge : CartridgeImage) : WonderSwanBus
+        header = cartridge.header
+        new(cartridge.rom, save_ram_size: header.save_medium.size, model: cartridge.model,
+          cartridge_header: header, save_ram_mapped: header.save_medium.sram?)
+      end
+
+      def replace_save_ram(data : Bytes) : Nil
+        raise ArgumentError.new("save data size does not match cartridge") unless data.size == @save_ram.size
+        @save_ram.copy_from(data)
       end
 
       def read_u8(address : UInt32) : UInt8
@@ -94,20 +114,22 @@ module Swanium
         # Hardware-only/read-only ports will gain device-specific handlers;
         # unknown ports intentionally retain open-bus behavior.
         case port
-        when 0x00_u8          then @ports[port] & 0x3F_u8
-        when 0x01_u8          then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x07_u8
-        when 0x04_u8          then @ports[port] & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
-        when 0x05_u8          then @ports[port] & 0x7F_u8
-        when 0x07_u8          then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x77_u8
-        when 0x15_u8          then @ports[port] & 0x3F_u8
-        when 0x19_u8, 0x1B_u8 then 0_u8
-        when 0x20_u8..0x3F_u8 then @ports[port] & mono_palette_port_mask(port)
-        when 0xC0_u8          then @linear_offset
-        when 0xC1_u8          then @ram_bank
-        when 0xC2_u8          then @rom_bank0
-        when 0xC3_u8          then @rom_bank1
-        when 0xA2_u8, 0xA3_u8 then @ports[port] & 0x0F_u8
-        when 0xA0_u8          then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
+        when 0x00_u8                            then @ports[port] & 0x3F_u8
+        when 0x01_u8                            then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x07_u8
+        when 0x04_u8                            then @ports[port] & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
+        when 0x05_u8                            then @ports[port] & 0x7F_u8
+        when 0x07_u8                            then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x77_u8
+        when 0x15_u8                            then @ports[port] & 0x3F_u8
+        when 0x19_u8, 0x1B_u8                   then 0_u8
+        when 0x20_u8..0x3F_u8                   then @ports[port] & mono_palette_port_mask(port)
+        when 0xC4_u8, 0xC5_u8, 0xC6_u8, 0xC7_u8 then @eeprom ? @ports[port] : OPEN_BUS
+        when 0xC8_u8                            then @eeprom ? 0x02_u8 : OPEN_BUS
+        when 0xC0_u8                            then @linear_offset
+        when 0xC1_u8                            then @ram_bank
+        when 0xC2_u8                            then @rom_bank0
+        when 0xC3_u8                            then @rom_bank1
+        when 0xA2_u8, 0xA3_u8                   then @ports[port] & 0x0F_u8
+        when 0xA0_u8                            then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
         when 0xB0_u8
           @model == WonderSwanModel::Mono ? (@ports[port] & 0xF8_u8) | highest_pending_bit : @ports[port] & 0xF8_u8
         when 0xB4_u8
@@ -138,6 +160,10 @@ module Swanium
         when 0x19_u8, 0x1B_u8
         when 0x20_u8..0x3F_u8
           @ports[port] = value & mono_palette_port_mask(port)
+        when 0xC4_u8..0xC7_u8
+          @ports[port] = value
+        when 0xC8_u8
+          eeprom_control(value) if @eeprom
         when 0xC0_u8
           @linear_offset = value & 0x3F_u8
           @ports[port] = @linear_offset
@@ -316,12 +342,12 @@ module Swanium
       end
 
       private def read_save_ram(address : UInt32) : UInt8
-        return OPEN_BUS if @save_ram.empty?
+        return OPEN_BUS if @save_ram.empty? || !@save_ram_mapped
         @save_ram[bank_index(@ram_bank, address, @save_ram.size)]
       end
 
       private def write_save_ram(address : UInt32, value : UInt8) : Nil
-        return if @save_ram.empty?
+        return if @save_ram.empty? || !@save_ram_mapped
         @save_ram[bank_index(@ram_bank, address, @save_ram.size)] = value
       end
 
@@ -338,6 +364,31 @@ module Swanium
 
       private def bank_index(bank : UInt8, address : UInt32, size : Int) : Int
         (((bank.to_u64 << 16) | (address & 0xFFFF_u32).to_u64) % size.to_u64).to_i
+      end
+
+      private def eeprom_address_bits(size : Int) : UInt8
+        case size
+        when  128 then 6_u8
+        when 1024 then 9_u8
+        when 2048 then 10_u8
+        else           raise ArgumentError.new("unsupported cartridge EEPROM capacity #{size}")
+        end
+      end
+
+      private def eeprom_control(value : UInt8) : Nil
+        eeprom = @eeprom.not_nil!
+        data = read_port_u16(0xC4_u8)
+        command = read_port_u16(0xC6_u8)
+        case value >> 4
+        when 1_u8
+          eeprom.execute(command)
+          write_port_u16(0xC4_u8, eeprom.read_data)
+        when 2_u8
+          eeprom.write_data(data)
+          eeprom.execute(command)
+        when 4_u8
+          eeprom.execute(command)
+        end
       end
 
       private def read_port_u16(port : UInt8) : UInt16

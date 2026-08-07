@@ -12,7 +12,7 @@ PPU specは単色2bpp、Color / Crystalのplanar・packed 4bpp、スプライト
 
 公開テスト ROM はリポジトリに含めず、通常の CI もこれを読み込まない。公開 ROM の opt-in 検証は、ローカルで必要な環境変数を設定して `mise run public-roms` を実行する。現在は `WS_CPU_TEST_ROM=/path/to/WSCpuTest.wsc mise run public-roms` に対応し、実行サイクル数と状態ハッシュを固定して検証する。公開 ROM の検証を追加する場合も、`public-roms` の依存タスクとして追加し、`ci` へは追加しない。
 
-macOS の市販ゲーム互換性は、利用者が合法的に保持する ROM をローカルで明示指定して手動確認する。タイトルごとに起動、入力、映像、音声、セーブ、一定時間の連続実行を確認し、結果と既知の制限だけを `docs/compatibility.md` に記録する。市販 ROM、そのハッシュ、セーブデータ、スクリーンショットをリポジトリまたは CI に置かない。
+macOS の市販ゲーム互換性は、利用者が合法的に保持する ROM をローカルで `./bin/swanium-crystal --rom PATH` と明示指定して手動確認する。画面を使わない起動・長時間実行の確認には `--headless-frames COUNT` を併用する。タイトルごとに起動、入力、映像、音声、セーブ、一定時間の連続実行を確認し、結果と既知の制限だけを `docs/compatibility.md` に記録する。市販 ROM、そのハッシュ、セーブデータ、スクリーンショットをリポジトリまたは CI に置かない。
 
 ## 音声と状態保存
 

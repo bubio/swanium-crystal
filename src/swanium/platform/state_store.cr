@@ -5,8 +5,16 @@ module Swanium
     # Restricts save states to Swanium's own settings directory and numbered
     # slots, so arbitrary paths never enter the product UI.
     module StateStore
-      def self.path(slot : Int32 = 0) : Path
+      def self.path(game_id : String = "demo", slot : Int32 = 0) : Path
         raise ArgumentError.new("save-state slot must be between 0 and 9") unless slot.in?(0..9)
+        state_root / "swanium-crystal" / "states" / "#{safe_name(game_id)}-#{slot}.swcstate"
+      end
+
+      def self.cartridge_save_path(game_id : String) : Path
+        state_root / "swanium-crystal" / "saves" / "#{safe_name(game_id)}.sav"
+      end
+
+      private def self.state_root : Path
         state_root = if root = ENV["XDG_STATE_HOME"]?
                        Path[root]
                      else
@@ -16,20 +24,41 @@ module Swanium
                          Path.home / ".local" / "state"
                        {% end %}
                      end
-        state_root / "swanium-crystal" / "states" / "demo-#{slot}.swcstate"
+        state_root
       end
 
-      def self.save(machine : Core::Machine, bus : Core::WonderSwanBus, slot : Int32 = 0) : Path
-        destination = path(slot)
+      def self.save(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
+        destination = path(game_id, slot)
         Dir.mkdir_p(destination.parent)
         File.write(destination, Core::SaveState.dump(machine, bus))
         destination
       end
 
-      def self.load(machine : Core::Machine, bus : Core::WonderSwanBus, slot : Int32 = 0) : Path
-        source = path(slot)
+      def self.load(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
+        source = path(game_id, slot)
         Core::SaveState.load(File.read(source).to_slice, machine, bus)
         source
+      end
+
+      def self.load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil
+        return if bus.save_ram.empty?
+        source = cartridge_save_path(game_id)
+        return unless File.exists?(source)
+        bytes = File.read(source).to_slice
+        raise ArgumentError.new("cartridge save size does not match #{game_id}") unless bytes.size == bus.save_ram.size
+        bus.replace_save_ram(bytes)
+      end
+
+      def self.save_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Path?
+        return nil if bus.save_ram.empty?
+        destination = cartridge_save_path(game_id)
+        Dir.mkdir_p(destination.parent)
+        File.write(destination, bus.save_ram)
+        destination
+      end
+
+      private def self.safe_name(value : String) : String
+        value.gsub(/[^A-Za-z0-9._-]+/, "_")
       end
     end
   end

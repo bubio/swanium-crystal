@@ -1,3 +1,5 @@
+require "./audio_resampler"
+
 module Swanium
   module Platform
     class SdlError < Exception
@@ -6,19 +8,24 @@ module Swanium
     # SDL stays behind this small, checked interface. The emulator core never
     # depends on the C API directly.
     module Sdl
-      WINDOWPOS_CENTERED       = 0x2FFF0000_i32
-      INIT_VIDEO               = 0x00000020_u32
-      INIT_AUDIO               = 0x00000010_u32
-      INIT_GAMECONTROLLER      = 0x00002000_u32
-      WINDOW_SHOWN             = 0x00000004_u32
-      RENDERER_ACCELERATED     = 0x00000002_u32
-      RENDERER_PRESENTVSYNC    = 0x00000004_u32
-      TEXTUREACCESS_STREAMING  =              1
-      PIXELFORMAT_RGBA32       =  376840196_u32 # ABGR8888 on little-endian hosts
-      EVENT_QUIT               =      0x100_u32
-      EVENT_KEYDOWN            =      0x300_u32
-      EVENT_CONTROLLER_ADDED   =      0x650_u32
-      EVENT_CONTROLLER_REMOVED =      0x651_u32
+      WINDOWPOS_CENTERED         = 0x2FFF0000_i32
+      INIT_VIDEO                 = 0x00000020_u32
+      INIT_AUDIO                 = 0x00000010_u32
+      INIT_GAMECONTROLLER        = 0x00002000_u32
+      WINDOW_SHOWN               = 0x00000004_u32
+      RENDERER_ACCELERATED       = 0x00000002_u32
+      RENDERER_PRESENTVSYNC      = 0x00000004_u32
+      TEXTUREACCESS_STREAMING    =              1
+      PIXELFORMAT_RGBA32         =  376840196_u32 # ABGR8888 on little-endian hosts
+      AUDIO_FRAMES_PER_BUFFER    =        256_u16
+      AUDIO_PREROLL_FRAMES       =              3
+      AUDIO_MAX_QUEUE_BYTES      =      9_600_u32 # 100 ms at 24 kHz stereo S16
+      AUDIO_ALLOW_RATE_CHANGE    =           0x01
+      AUDIO_ALLOW_SAMPLES_CHANGE =           0x08
+      EVENT_QUIT                 =      0x100_u32
+      EVENT_KEYDOWN              =      0x300_u32
+      EVENT_CONTROLLER_ADDED     =      0x650_u32
+      EVENT_CONTROLLER_REMOVED   =      0x651_u32
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -142,7 +149,7 @@ module Swanium
           desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
           desired.format = 0x8010_u16 # AUDIO_S16SYS
           desired.channels = 2_u8
-          desired.samples = 512_u16
+          desired.samples = AUDIO_FRAMES_PER_BUFFER
           desired.callback = Pointer(Void).null
           desired.userdata = Pointer(Void).null
           audio_device = LibSDL.open_audio_device(Pointer(LibC::Char).null, 0, pointerof(desired), Pointer(LibSDL::AudioSpec).null, 0)
@@ -206,6 +213,126 @@ module Swanium
             end
           end
         ensure
+          LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
+          LibSDL.game_controller_close(controller) unless controller.null?
+          LibSDL.destroy_texture(texture) unless texture.null?
+          LibSDL.destroy_renderer(renderer) unless renderer.null?
+          LibSDL.destroy_window(window) unless window.null?
+          LibSDL.quit
+        end
+      end
+
+      # Run one explicitly selected local cartridge. File loading and filename
+      # handling stay in the application layer; this method receives only
+      # validated bytes and a display/save label.
+      def self.play(cartridge : Core::CartridgeImage, title : String) : Nil
+        if LibSDL.init(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
+          raise SdlError.new(error_message)
+        end
+
+        window = Pointer(Void).null
+        renderer = Pointer(Void).null
+        texture = Pointer(Void).null
+        controller = Pointer(Void).null
+        audio_device = 0_u32
+        bus = Core::WonderSwanBus.from_cartridge(cartridge)
+        machine = Core::Machine.new
+        machine.cpu.reset(0xFFFF_u16, 0_u16)
+        debugger = Frontend::Debugger.new
+        begin
+          StateStore.load_cartridge_save(bus, title)
+          window = LibSDL.create_window(
+            "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
+            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3, WINDOW_SHOWN
+          )
+          raise SdlError.new(error_message) if window.null?
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
+          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+          raise SdlError.new(error_message) if renderer.null?
+          check(LibSDL.render_set_logical_size(renderer, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT))
+          texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
+            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
+          raise SdlError.new(error_message) if texture.null?
+          controller = first_controller
+
+          desired = LibSDL::AudioSpec.new
+          desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
+          desired.format = 0x8010_u16
+          desired.channels = 2_u8
+          desired.samples = AUDIO_FRAMES_PER_BUFFER
+          desired.callback = Pointer(Void).null
+          desired.userdata = Pointer(Void).null
+          obtained = LibSDL::AudioSpec.new
+          audio_device = LibSDL.open_audio_device(Pointer(LibC::Char).null, 0, pointerof(desired), pointerof(obtained),
+            AUDIO_ALLOW_RATE_CHANGE | AUDIO_ALLOW_SAMPLES_CHANGE)
+          raise SdlError.new(error_message) if audio_device == 0_u32
+          raise SdlError.new("SDL2 selected an unsupported audio format") unless obtained.format == desired.format && obtained.channels == 2_u8
+          resampler = AudioResampler.new(Core::Apu::OUTPUT_SAMPLE_RATE.to_i32, obtained.freq)
+          AUDIO_PREROLL_FRAMES.times do
+            machine.run_wonder_swan_frame(bus)
+            queue_audio(audio_device, machine.apu.samples, resampler)
+            machine.apu.clear_samples
+          end
+          LibSDL.pause_audio_device(audio_device, 0)
+
+          event = uninitialized LibSDL::Event
+          running = true
+          frequency = LibSDL.get_performance_frequency
+          frame_ticks = frequency // 60_u64
+          next_frame = LibSDL.get_performance_counter
+          presented_frames = 0_u32
+          audio_underruns = 0_u32
+          while running
+            while LibSDL.poll_event(pointerof(event)) != 0
+              running = false if event.type == EVENT_QUIT
+              controller = first_controller if event.type == EVENT_CONTROLLER_ADDED && controller.null?
+              if event.type == EVENT_CONTROLLER_REMOVED && !controller.null? && LibSDL.game_controller_get_attached(controller) == 0
+                LibSDL.game_controller_close(controller)
+                controller = Pointer(Void).null
+              end
+              if event.type == EVENT_KEYDOWN
+                keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
+                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, title)
+              end
+            end
+            keys, escape = input_state(controller)
+            running = false if escape
+            queued_audio = LibSDL.get_queued_audio_size(audio_device)
+            if debugger.paused
+              debugger.run_instruction?(machine, bus)
+            else
+              # Match the original frontend's audio-led worker: catch up when
+              # the host callback has drained below 50 ms, but never run an
+              # unbounded burst on the UI thread.
+              frames_run = 0
+              while queued_audio < audio_target_bytes(obtained.freq) && frames_run < 4
+                machine.run_wonder_swan_frame(bus, keys)
+                queue_audio(audio_device, machine.apu.samples, resampler)
+                machine.apu.clear_samples
+                queued_audio = LibSDL.get_queued_audio_size(audio_device)
+                frames_run += 1
+              end
+            end
+            audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 1_024_u32 && !debugger.paused
+            latency_ms = queued_audio * 1000_u32 // (obtained.freq.to_u32 * 4_u32)
+            rgba = machine.framebuffer_rgba
+            debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
+            check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
+            check(LibSDL.render_clear(renderer))
+            check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
+            LibSDL.render_present(renderer)
+            presented_frames &+= 1_u32
+            next_frame &+= frame_ticks
+            now = LibSDL.get_performance_counter
+            if next_frame > now
+              milliseconds = ((next_frame - now) * 1000_u64 // frequency).to_u32
+              LibSDL.delay(milliseconds) if milliseconds > 0
+            else
+              next_frame = now
+            end
+          end
+        ensure
+          StateStore.save_cartridge_save(bus, title)
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           LibSDL.game_controller_close(controller) unless controller.null?
           LibSDL.destroy_texture(texture) unless texture.null?
@@ -299,17 +426,29 @@ module Swanium
         bus.write_io(0x91_u8, 0x80_u8)
       end
 
-      private def self.queue_audio(device : UInt32, samples : Array(Int16)) : Nil
+      private def self.queue_audio(device : UInt32, samples : Array(Int16), resampler : AudioResampler? = nil) : Nil
         return if samples.empty?
-        bytes = (samples.size * sizeof(Int16)).to_u32
-        # Keep at most about five video frames queued. This bounds input-to-audio
-        # latency while tolerating ordinary scheduler jitter.
-        LibSDL.clear_queued_audio(device) if LibSDL.get_queued_audio_size(device) > 6_400_u32
-        check(LibSDL.queue_audio(device, samples.to_unsafe.as(Void*), bytes))
+        output = resampler ? resampler.process(samples) : samples
+        return if output.empty?
+        bytes = (output.size * sizeof(Int16)).to_u32
+        maximum = resampler ? audio_max_queue_bytes(resampler.output_rate) : AUDIO_MAX_QUEUE_BYTES
+        # Do not clear a live queue: it is audible as a dropout. A temporary
+        # producer lead is bounded by dropping only the newest unplayed block.
+        return if LibSDL.get_queued_audio_size(device) > maximum
+        check(LibSDL.queue_audio(device, output.to_unsafe.as(Void*), bytes))
+      end
+
+      private def self.audio_target_bytes(sample_rate : Int32) : UInt32
+        (sample_rate.to_u32 * 4_u32 // 20_u32) # 50 ms of stereo S16
+      end
+
+      private def self.audio_max_queue_bytes(sample_rate : Int32) : UInt32
+        sample_rate.to_u32 * 4_u32 // 6_u32 # about 167 ms of stereo S16
       end
 
       private def self.handle_debug_key(scancode : Int32, repeat : UInt8, debugger : Frontend::Debugger,
-                                        machine : Core::Machine, bus : Core::WonderSwanBus, audio_device : UInt32) : Nil
+                                        machine : Core::Machine, bus : Core::WonderSwanBus, audio_device : UInt32,
+                                        game_id : String = "demo") : Nil
         return unless repeat == 0_u8
         case scancode
         when SC_F1
@@ -326,9 +465,9 @@ module Swanium
         when SC_PAGEDOWN
           debugger.move_memory(8)
         when SC_F5
-          StateStore.save(machine, bus)
+          StateStore.save(machine, bus, game_id)
         when SC_F9
-          StateStore.load(machine, bus)
+          StateStore.load(machine, bus, game_id)
           LibSDL.clear_queued_audio(audio_device)
         end
       end

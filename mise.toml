@@ -28,8 +28,12 @@ description = "Alias for the headless test suite"
 depends = ["spec"]
 
 [tasks.build]
-description = "Build the command-line application"
-run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium-crystal"
+description = "Build the optimized macOS application"
+run = "mkdir -p bin && crystal build --release --no-debug src/swanium.cr -o bin/swanium-crystal"
+
+[tasks.build-debug]
+description = "Build an unoptimized binary for debugger work"
+run = "mkdir -p bin && crystal build src/swanium.cr -o bin/swanium-crystal-debug"
 
 [tasks.ci]
 description = "Run the repository CI suite with self-contained fixtures only"
