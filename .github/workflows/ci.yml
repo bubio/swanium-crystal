@@ -2,17 +2,64 @@ name: CI
 
 on:
   push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "spec/**"
+      - "tools/**"
+      - "mise.toml"
+      - "shard.yml"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "src/**"
+      - "spec/**"
+      - "tools/**"
+      - "mise.toml"
+      - "shard.yml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
-    runs-on: macos-latest
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runs-on: macos-26
+          - arch: x86_64
+            runs-on: macos-26-intel
+
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install SDL2 development files (macOS)
-        if: runner.os == 'macOS'
+      - name: Verify runner architecture
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+      - name: Install SDL2 development files
         run: brew install sdl2
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
         with:
           cache: true
-      - run: mise run ci
+      - name: Test and build optimized binary
+        run: mise run ci
+      - name: Verify binary and SDL2 linkage
+        run: |
+          file bin/swanium-crystal
+          otool -L bin/swanium-crystal | grep -i 'libSDL2'
+          bin/swanium-crystal --version
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: swanium-crystal-macos-${{ matrix.arch }}
+          path: bin/swanium-crystal
+          if-no-files-found: error
