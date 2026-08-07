@@ -17,7 +17,7 @@
 | Clock Tower | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過（追加で400フレーム通過） | 手動確認待ち（SRAM 32 KiBを検出・保存対象化済み） | QUICK STARTの黒画面は、ノイズLFSR読出しが音声出力と無関係に進むよう修正。実画面での再確認待ち |
 | Makaimura | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（SRAM 32 KiBを検出・保存対象化済み） | 実画面での確認待ち |
 | Final Fantasy 4 | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（Color、SRAM 32 KiBを検出・保存対象化済み） | 実画面での確認待ち |
-| Last Alive | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（Color、カートリッジEEPROM 2 KiBを検出・保存対象化済み） | 実画面での確認待ち |
+| Last Alive | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（Color、カートリッジEEPROM 2 KiBを検出・保存対象化済み） | 縦画面表示と書込み単位PCM復元を実装。実画面での再確認待ち |
 | Wizardry | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（Color、SRAM 32 KiBを検出・保存対象化済み） | 実画面での確認待ち |
 | Wizardry: Scenario 1 | 0 | 2026-08-07 | macOS 26.6 / Apple Silicon | 300フレーム通過 | 手動確認待ち（Color、SRAM 32 KiBを検出・保存対象化済み） | 実画面での確認待ち |
 

@@ -77,6 +77,7 @@ module Swanium
         @rom_bank0 = 0xFF_u8
         @rom_bank1 = 0xFF_u8
         @keys = 0_u16
+        @voice_writes = [] of UInt8
         @pending_wait_cycles = 0_u32
       end
 
@@ -89,6 +90,12 @@ module Swanium
       def replace_save_ram(data : Bytes) : Nil
         raise ArgumentError.new("save data size does not match cartridge") unless data.size == @save_ram.size
         @save_ram.copy_from(data)
+      end
+
+      def consume_voice_writes : Array(UInt8)
+        writes = @voice_writes
+        @voice_writes = [] of UInt8
+        writes
       end
 
       def read_u8(address : UInt32) : UInt8
@@ -176,6 +183,9 @@ module Swanium
         when 0xC3_u8
           @rom_bank1 = value
           @ports[port] = value
+        when 0x89_u8
+          @ports[port] = value
+          @voice_writes << value if (@ports[0x90] & 0x20_u8) != 0_u8
         when 0xA2_u8, 0xA3_u8
           @ports[port] = value & 0x0F_u8
         when 0x40_u8..0x5F_u8

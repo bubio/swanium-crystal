@@ -60,6 +60,7 @@ module Swanium
       # highest-priority enabled request at the following instruction boundary.
       def step_wonder_swan(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
+        bus.consume_voice_writes.each { |sample| @apu.write_voice(sample) }
         if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
           if vector = bus.pending_interrupt_vector?
             cycles += @cpu.service_interrupt(bus, vector)

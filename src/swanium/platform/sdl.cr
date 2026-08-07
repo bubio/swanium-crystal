@@ -239,19 +239,23 @@ module Swanium
         machine = Core::Machine.new
         machine.cpu.reset(0xFFFF_u16, 0_u16)
         debugger = Frontend::Debugger.new
+        vertical = cartridge.header.vertical
+        display_width = vertical ? Core::Ppu::SCREEN_HEIGHT : Core::Ppu::SCREEN_WIDTH
+        display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
+        rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
         begin
           StateStore.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3, WINDOW_SHOWN
+            display_width * 3, display_height * 3, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
-          check(LibSDL.render_set_logical_size(renderer, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT))
+          check(LibSDL.render_set_logical_size(renderer, display_width, display_height))
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
-            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
+            display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
           controller = first_controller
 
@@ -296,6 +300,9 @@ module Swanium
               end
             end
             keys, escape = input_state(controller)
+            # The display rotates left, so host directions need the opposite
+            # (right) compensation to keep on-screen movement intuitive.
+            keys = rotate_input_right(keys) if vertical
             running = false if escape
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             if debugger.paused
@@ -317,7 +324,13 @@ module Swanium
             latency_ms = queued_audio * 1000_u32 // (obtained.freq.to_u32 * 4_u32)
             rgba = machine.framebuffer_rgba
             debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
-            check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
+            displayed_rgba = if destination = rotated_rgba
+                               rotate_left(rgba, destination)
+                               destination
+                             else
+                               rgba
+                             end
+            check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
             check(LibSDL.render_clear(renderer))
             check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
             LibSDL.render_present(renderer)
@@ -414,6 +427,38 @@ module Swanium
           keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, 14) != 0
         end
         {keys, state[SC_ESCAPE] != 0}
+      end
+
+      private def self.rotate_input_right(keys : UInt16) : UInt16
+        rotated = keys & ~(0x00FF_u16)
+        rotated |= Core::WonderSwanKey::X2 if (keys & Core::WonderSwanKey::X1) != 0_u16
+        rotated |= Core::WonderSwanKey::X3 if (keys & Core::WonderSwanKey::X2) != 0_u16
+        rotated |= Core::WonderSwanKey::X4 if (keys & Core::WonderSwanKey::X3) != 0_u16
+        rotated |= Core::WonderSwanKey::X1 if (keys & Core::WonderSwanKey::X4) != 0_u16
+        rotated |= Core::WonderSwanKey::Y2 if (keys & Core::WonderSwanKey::Y1) != 0_u16
+        rotated |= Core::WonderSwanKey::Y3 if (keys & Core::WonderSwanKey::Y2) != 0_u16
+        rotated |= Core::WonderSwanKey::Y4 if (keys & Core::WonderSwanKey::Y3) != 0_u16
+        rotated |= Core::WonderSwanKey::Y1 if (keys & Core::WonderSwanKey::Y4) != 0_u16
+        rotated
+      end
+
+      # Source is 224x144 landscape RGBA. The cartridge footer's vertical flag
+      # requests the same left rotation used by the original Swanium frontend.
+      private def self.rotate_left(source : Bytes, destination : Bytes) : Nil
+        source_y = 0
+        while source_y < Core::Ppu::SCREEN_HEIGHT
+          source_x = 0
+          while source_x < Core::Ppu::SCREEN_WIDTH
+            source_offset = (source_y * Core::Ppu::SCREEN_WIDTH + source_x) * 4
+            destination_offset = ((Core::Ppu::SCREEN_WIDTH - 1 - source_x) * Core::Ppu::SCREEN_HEIGHT + source_y) * 4
+            destination[destination_offset] = source[source_offset]
+            destination[destination_offset + 1] = source[source_offset + 1]
+            destination[destination_offset + 2] = source[source_offset + 2]
+            destination[destination_offset + 3] = source[source_offset + 3]
+            source_x += 1
+          end
+          source_y += 1
+        end
       end
 
       private def self.configure_audio_test(bus : Core::WonderSwanBus) : Nil

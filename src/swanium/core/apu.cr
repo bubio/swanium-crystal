@@ -27,6 +27,8 @@ module Swanium
         @sweep_counter = 0_u32
         @sweep_step = 0_u8
         @sample_accumulator = 0_u32
+        @voice_previous = 0_i32
+        @voice_level = 0_i32
         @samples = Array(Int16).new(1024)
       end
 
@@ -38,7 +40,20 @@ module Swanium
         @sweep_counter = 0_u32
         @sweep_step = 0_u8
         @sample_accumulator = 0_u32
+        @voice_previous = 0_i32
+        @voice_level = 0_i32
         @samples.clear
+      end
+
+      # Channel 2 voice mode streams signed PCM through port 0x89. Games such
+      # as Last Alive alternate two streams at roughly twice the audio rate;
+      # the hardware's analog stage averages adjacent writes. Feeding this at
+      # write time (rather than sampling the port once per audio frame) removes
+      # the characteristic harsh multiplex buzz.
+      def write_voice(sample : UInt8) : Nil
+        current = sample.to_i32 - 0x80
+        @voice_level = (current + @voice_previous) // 2
+        @voice_previous = current
       end
 
       def clear_samples : Nil
@@ -70,6 +85,8 @@ module Swanium
         io.write_bytes(@sweep_counter, IO::ByteFormat::LittleEndian)
         io.write_byte(@sweep_step)
         io.write_bytes(@sample_accumulator, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@voice_previous, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@voice_level, IO::ByteFormat::LittleEndian)
         io.write_bytes(@samples.size.to_u32, IO::ByteFormat::LittleEndian)
         @samples.each { |sample| io.write_bytes(sample, IO::ByteFormat::LittleEndian) }
       end
@@ -87,6 +104,8 @@ module Swanium
         @sweep_counter = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         @sweep_step = read_byte(io)
         @sample_accumulator = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
+        @voice_previous = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
+        @voice_level = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
         sample_count = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         raise ArgumentError.new("invalid buffered PCM length") if sample_count > 1_000_000_u32
         @samples = Array(Int16).new(sample_count.to_i) do
@@ -168,10 +187,13 @@ module Swanium
           right += sample.to_i32 * (volume & 0x0F_u8).to_i32 * MIX_SCALE
         end
         if (control & 0x20_u8) != 0_u8
-          voice = (ports[0x89].to_i32 - 128) * MIX_SCALE
+          voice = @voice_level * MIX_SCALE * 2
           volume = ports[0x94]
-          left += voice * (volume >> 4).to_i32
-          right += voice * (volume & 0x0F_u8).to_i32
+          left += (volume & 0x04_u8) != 0_u8 ? voice : (volume & 0x08_u8) != 0_u8 ? voice >> 1 : 0
+          right += (volume & 0x01_u8) != 0_u8 ? voice : (volume & 0x02_u8) != 0_u8 ? voice >> 1 : 0
+        else
+          @voice_previous = 0_i32
+          @voice_level = 0_i32
         end
         if color_hardware && (ports[0x6A] & 0x80_u8) != 0_u8
           hyper_left, hyper_right = hypervoice(ports)

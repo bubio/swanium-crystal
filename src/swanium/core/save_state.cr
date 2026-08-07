@@ -9,7 +9,7 @@ module Swanium
     # deliberately left to the frontend; the core only accepts and returns bytes.
     module SaveState
       MAGIC   = "SWCST001".to_slice
-      VERSION = 1_u32
+      VERSION = 2_u32
 
       def self.dump(machine : Machine, bus : WonderSwanBus) : Bytes
         io = IO::Memory.new

@@ -61,6 +61,24 @@ describe Swanium::Core::Apu do
     ports[0x93].should eq(0_u8)
   end
 
+  it "reconstructs multiplexed channel-two PCM from every port write" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    ports[0x90] = 0x20_u8 # Voice mode.
+    ports[0x91] = 0x80_u8 # Stereo output.
+    ports[0x94] = 0x05_u8 # Full volume on both sides.
+
+    apu.write_voice(0xC0_u8)
+    apu.tick(128_u32, wram, ports)
+    apu.samples.should eq([2048_i16, 2048_i16])
+    apu.clear_samples
+
+    apu.write_voice(0xC0_u8)
+    apu.tick(128_u32, wram, ports)
+    apu.samples.should eq([4096_i16, 4096_i16])
+  end
+
   it "matches headless APU advancement with instruction-driven machine advancement" do
     direct = Swanium::Core::Apu.new
     direct_wram = Bytes.new(0x10000, 0_u8)

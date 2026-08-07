@@ -39,8 +39,8 @@ describe Swanium::Core::SaveState do
     end
 
     state = Swanium::Core::SaveState.dump(machine, bus)
-    state[8] = 2_u8
-    expect_raises(Swanium::Core::SaveStateError, "unsupported save-state version 2") do
+    state[8] = 3_u8
+    expect_raises(Swanium::Core::SaveStateError, "unsupported save-state version 3") do
       Swanium::Core::SaveState.load(state, machine, bus)
     end
   end
