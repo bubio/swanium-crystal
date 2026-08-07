@@ -48,6 +48,21 @@ describe Swanium::Core::Apu do
     ports[0x8E].bit(3).should eq(0)
   end
 
+  it "accepts a negative signed sweep delta" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    ports[0x84] = 0x00_u8
+    ports[0x85] = 0x04_u8
+    ports[0x8C] = 0xFF_u8 # -1 as signed 8-bit hardware data.
+    ports[0x8D] = 0_u8
+    ports[0x90] = 0x44_u8 # Channel three and sweep enabled.
+
+    apu.tick(8192_u32, wram, ports)
+
+    (ports[0x84].to_u16 | (ports[0x85].to_u16 << 8)).should eq(0x03FF_u16)
+  end
+
   it "advances the noise LFSR for CPU readback while channel four is muted" do
     apu = Swanium::Core::Apu.new
     wram = Bytes.new(0x10000, 0_u8)

@@ -164,7 +164,9 @@ module Swanium
         return if @sweep_counter < 8192_u32
         @sweep_counter = 0_u32
         if @sweep_step == 0_u8
-          pitch = read_pitch(ports, 2).to_i32 + ports[0x8C].to_i8.to_i32
+          # Sweep delta is a signed hardware register. Reinterpret its bits
+          # rather than using Crystal's checked UInt8-to-Int8 conversion.
+          pitch = read_pitch(ports, 2).to_i32 + ports[0x8C].unsafe_as(Int8).to_i32
           pitch = pitch.clamp(0, 0x7FF)
           ports[0x84] = (pitch & 0xFF).to_u8
           ports[0x85] = ((pitch >> 8) & 0x07).to_u8

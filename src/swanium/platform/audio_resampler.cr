@@ -48,8 +48,11 @@ module Swanium
       end
 
       private def interpolate(before : Int16, after : Int16, numerator : Int64, denominator : Int32) : Int16
-        before_i = before.to_i32
-        (before_i + (after.to_i32 - before_i) * numerator // denominator).to_i16
+        # At a 48 kHz host rate, numerator can reach 48_000. A full Int16
+        # step overflows Int32 during multiplication although the final
+        # interpolated value remains within Int16's range.
+        before_i = before.to_i64
+        (before_i + (after.to_i64 - before_i) * numerator // denominator).to_i16
       end
     end
   end

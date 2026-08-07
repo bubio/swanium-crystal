@@ -74,5 +74,8 @@ begin
   Swanium.run(ARGV)
 rescue ex : Exception
   STDERR.puts "swanium-crystal: #{ex.message}"
+  if ENV["SWANIUM_BACKTRACE"]? == "1"
+    ex.backtrace.try { |backtrace| STDERR.puts backtrace.join('\n') }
+  end
   exit 1
 end
