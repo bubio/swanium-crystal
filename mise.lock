@@ -13,3 +13,8 @@ url_api = "https://api.github.com/repos/crystal-lang/crystal/releases/assets/306
 checksum = "sha256:f61620ac389d640d4d429d114c725d6d53df27f0a3e54af25beb398a5815d6db"
 url = "https://github.com/crystal-lang/crystal/releases/download/1.18.2/crystal-1.18.2-1-darwin-universal.tar.gz"
 url_api = "https://api.github.com/repos/crystal-lang/crystal/releases/assets/306980309"
+
+[tools.crystal."platforms.macos-x64"]
+checksum = "sha256:f61620ac389d640d4d429d114c725d6d53df27f0a3e54af25beb398a5815d6db"
+url = "https://github.com/crystal-lang/crystal/releases/download/1.18.2/crystal-1.18.2-1-darwin-universal.tar.gz"
+url_api = "https://api.github.com/repos/crystal-lang/crystal/releases/assets/306980309"
