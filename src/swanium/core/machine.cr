@@ -1,4 +1,5 @@
 require "./cpu"
+require "./apu"
 require "./interrupt_controller"
 require "./ppu"
 require "./timer"
@@ -15,6 +16,7 @@ module Swanium
       CYCLES_PER_FRAME    = CYCLES_PER_SCANLINE.to_u64 * SCANLINES_PER_FRAME
 
       getter cycles : UInt64
+      getter apu : Apu
       getter cpu : Cpu
       getter interrupts : InterruptController
       getter ppu : Ppu
@@ -23,6 +25,7 @@ module Swanium
       def initialize
         @cycles = 0_u64
         @cpu = Cpu.new
+        @apu = Apu.new
         @interrupts = InterruptController.new
         @ppu = Ppu.new
         @scanline_cycles = 0_u32
@@ -63,6 +66,7 @@ module Swanium
           end
         end
         @cycles += cycles
+        @apu.tick(cycles, bus.work_ram, bus.ports, bus.model.color?)
         advance_wonder_swan_display(bus, cycles)
         cycles
       end
@@ -101,6 +105,16 @@ module Swanium
 
       def framebuffer_rgba : Bytes
         @ppu.framebuffer_rgba
+      end
+
+      def restore_timing(cycles : UInt64, scanline : UInt16, scanline_cycles : UInt32) : Nil
+        @cycles = cycles
+        @scanline = scanline
+        @scanline_cycles = scanline_cycles
+      end
+
+      def scanline_cycles : UInt32
+        @scanline_cycles
       end
     end
   end

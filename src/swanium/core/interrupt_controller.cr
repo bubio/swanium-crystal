@@ -38,6 +38,11 @@ module Swanium
         nil
       end
 
+      def restore(enabled : UInt8, pending : UInt8) : Nil
+        @enabled_mask = enabled
+        @pending_mask = pending
+      end
+
       private def bit(source : InterruptSource) : UInt8
         1_u8 << source.value
       end

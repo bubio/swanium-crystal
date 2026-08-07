@@ -54,8 +54,9 @@ module Swanium
       getter registers : Registers
       getter flags : Flags
       getter halted : Bool
+      getter interrupt_inhibit : UInt8
 
-      def initialize(@registers : Registers, @flags : Flags, @halted : Bool)
+      def initialize(@registers : Registers, @flags : Flags, @halted : Bool, @interrupt_inhibit = 0_u8)
       end
     end
 
@@ -142,7 +143,7 @@ module Swanium
       end
 
       def snapshot : CpuSnapshot
-        CpuSnapshot.new(@registers, @flags, @halted)
+        CpuSnapshot.new(@registers, @flags, @halted, @interrupt_inhibit)
       end
 
       def restore(snapshot : CpuSnapshot) : Nil
@@ -153,7 +154,7 @@ module Swanium
         @last_trace = nil
         @segment_override = nil
         @repeat_prefix = nil
-        @interrupt_inhibit = 0_u8
+        @interrupt_inhibit = snapshot.interrupt_inhibit
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.

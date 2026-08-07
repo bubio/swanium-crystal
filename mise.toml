@@ -44,7 +44,7 @@ description = "Create an SDL2 window briefly (requires a desktop session)"
 run = "crystal run src/swanium.cr -- --sdl-smoke"
 
 [tasks.video-demo]
-description = "Run the 60 fps display and keyboard/gamepad input test"
+description = "Run the 60 fps video, input, audio, save-state, and debugger test"
 run = "crystal run src/swanium.cr -- --video-demo"
 
 [tasks.wscputest]

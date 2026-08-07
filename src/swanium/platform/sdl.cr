@@ -8,6 +8,7 @@ module Swanium
     module Sdl
       WINDOWPOS_CENTERED       = 0x2FFF0000_i32
       INIT_VIDEO               = 0x00000020_u32
+      INIT_AUDIO               = 0x00000010_u32
       INIT_GAMECONTROLLER      = 0x00002000_u32
       WINDOW_SHOWN             = 0x00000004_u32
       RENDERER_ACCELERATED     = 0x00000002_u32
@@ -15,28 +16,64 @@ module Swanium
       TEXTUREACCESS_STREAMING  =              1
       PIXELFORMAT_RGBA32       =  376840196_u32 # ABGR8888 on little-endian hosts
       EVENT_QUIT               =      0x100_u32
+      EVENT_KEYDOWN            =      0x300_u32
       EVENT_CONTROLLER_ADDED   =      0x650_u32
       EVENT_CONTROLLER_REMOVED =      0x651_u32
 
       # SDL scancodes are layout-independent and therefore stable for games.
-      SC_A      =  4
-      SC_D      =  7
-      SC_S      = 22
-      SC_W      = 26
-      SC_X      = 27
-      SC_Z      = 29
-      SC_RETURN = 40
-      SC_ESCAPE = 41
-      SC_RIGHT  = 79
-      SC_LEFT   = 80
-      SC_DOWN   = 81
-      SC_UP     = 82
+      SC_A        =  4
+      SC_D        =  7
+      SC_S        = 22
+      SC_W        = 26
+      SC_X        = 27
+      SC_Z        = 29
+      SC_RETURN   = 40
+      SC_ESCAPE   = 41
+      SC_SPACE    = 44
+      SC_F1       = 58
+      SC_F5       = 62
+      SC_F9       = 66
+      SC_N        = 17
+      SC_1        = 30
+      SC_2        = 31
+      SC_3        = 32
+      SC_PAGEUP   = 75
+      SC_PAGEDOWN = 78
+      SC_RIGHT    = 79
+      SC_LEFT     = 80
+      SC_DOWN     = 81
+      SC_UP       = 82
 
       @[Link("SDL2")]
       lib LibSDL
         struct Event
           type : UInt32
           padding : StaticArray(UInt8, 52)
+        end
+
+        struct KeyboardEvent
+          type : UInt32
+          timestamp : UInt32
+          window_id : UInt32
+          state : UInt8
+          repeat : UInt8
+          padding : UInt16
+          scancode : Int32
+          keycode : Int32
+          modifiers : UInt16
+          unused : UInt32
+        end
+
+        struct AudioSpec
+          freq : Int32
+          format : UInt16
+          channels : UInt8
+          silence : UInt8
+          samples : UInt16
+          padding : UInt16
+          size : UInt32
+          callback : Void*
+          userdata : Void*
         end
 
         fun init = SDL_Init(flags : UInt32) : Int32
@@ -64,12 +101,18 @@ module Swanium
         fun get_performance_counter = SDL_GetPerformanceCounter : UInt64
         fun get_performance_frequency = SDL_GetPerformanceFrequency : UInt64
         fun delay = SDL_Delay(milliseconds : UInt32) : Nil
+        fun open_audio_device = SDL_OpenAudioDevice(device : LibC::Char*, capture : Int32, desired : AudioSpec*, obtained : AudioSpec*, allowed_changes : Int32) : UInt32
+        fun close_audio_device = SDL_CloseAudioDevice(device : UInt32) : Nil
+        fun pause_audio_device = SDL_PauseAudioDevice(device : UInt32, pause : Int32) : Nil
+        fun queue_audio = SDL_QueueAudio(device : UInt32, data : Void*, length : UInt32) : Int32
+        fun get_queued_audio_size = SDL_GetQueuedAudioSize(device : UInt32) : UInt32
+        fun clear_queued_audio = SDL_ClearQueuedAudio(device : UInt32) : Nil
       end
 
       # Interactive, copyright-free display/input verification program. It
       # stays open until Escape or the window close button is pressed.
       def self.video_demo : Nil
-        if LibSDL.init(INIT_VIDEO | INIT_GAMECONTROLLER) != 0
+        if LibSDL.init(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
           raise SdlError.new(error_message)
         end
 
@@ -77,6 +120,7 @@ module Swanium
         renderer = Pointer(Void).null
         texture = Pointer(Void).null
         controller = Pointer(Void).null
+        audio_device = 0_u32
         begin
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
@@ -94,14 +138,31 @@ module Swanium
           raise SdlError.new(error_message) if texture.null?
           controller = first_controller
 
+          desired = LibSDL::AudioSpec.new
+          desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
+          desired.format = 0x8010_u16 # AUDIO_S16SYS
+          desired.channels = 2_u8
+          desired.samples = 512_u16
+          desired.callback = Pointer(Void).null
+          desired.userdata = Pointer(Void).null
+          audio_device = LibSDL.open_audio_device(Pointer(LibC::Char).null, 0, pointerof(desired), Pointer(LibSDL::AudioSpec).null, 0)
+          raise SdlError.new(error_message) if audio_device == 0_u32
+          LibSDL.pause_audio_device(audio_device, 0)
+
           bus = Core::WonderSwanBus.new(model: Core::WonderSwanModel::Crystal)
-          ppu = Core::Ppu.new
+          machine = Core::Machine.new
+          debugger = Frontend::Debugger.new
           Core::VideoTestPattern.configure(bus)
+          configure_audio_test(bus)
+          bus.work_ram[0x1000] = 0x90_u8 # NOP stream for single-step debugging
+          machine.cpu.reset(0_u16, 0x1000_u16)
           event = uninitialized LibSDL::Event
           running = true
           frequency = LibSDL.get_performance_frequency
           frame_ticks = frequency // 60_u64
           next_frame = LibSDL.get_performance_counter
+          presented_frames = 0_u32
+          audio_underruns = 0_u32
           while running
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -110,14 +171,29 @@ module Swanium
                 LibSDL.game_controller_close(controller)
                 controller = Pointer(Void).null
               end
+              if event.type == EVENT_KEYDOWN
+                keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
+                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device)
+              end
             end
             keys, escape = input_state(controller)
             running = false if escape
-            rgba = Core::VideoTestPattern.render(ppu, bus, keys)
+            debugger.run_instruction?(machine, bus) if debugger.paused
+            rgba = Core::VideoTestPattern.render(machine.ppu, bus, keys)
+            queued_audio = LibSDL.get_queued_audio_size(audio_device)
+            audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 256_u32 && !debugger.paused
+            unless debugger.paused
+              machine.apu.tick(Core::Machine::CYCLES_PER_FRAME.to_u32, bus.work_ram, bus.ports, bus.model.color?)
+              queue_audio(audio_device, machine.apu.samples)
+              machine.apu.clear_samples
+            end
+            latency_ms = queued_audio * 1000_u32 // (Core::Apu::OUTPUT_SAMPLE_RATE * 4_u32)
+            debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
             check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
             check(LibSDL.render_clear(renderer))
             check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
             LibSDL.render_present(renderer)
+            presented_frames &+= 1_u32
             # Cap presentation to 60 Hz even on 120 Hz ProMotion displays and
             # when SDL falls back to a renderer without vertical sync.
             next_frame &+= frame_ticks
@@ -130,6 +206,7 @@ module Swanium
             end
           end
         ensure
+          LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           LibSDL.game_controller_close(controller) unless controller.null?
           LibSDL.destroy_texture(texture) unless texture.null?
           LibSDL.destroy_renderer(renderer) unless renderer.null?
@@ -209,6 +286,51 @@ module Swanium
           keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, 14) != 0
         end
         {keys, state[SC_ESCAPE] != 0}
+      end
+
+      private def self.configure_audio_test(bus : Core::WonderSwanBus) : Nil
+        bus.write_io(0x8F_u8, 8_u8)
+        16.times { |index| bus.work_ram[0x200 + index] = index < 8 ? 0x00_u8 : 0xFF_u8 }
+        pitch = 1830_u16
+        bus.write_io(0x80_u8, (pitch & 0xFF_u16).to_u8)
+        bus.write_io(0x81_u8, (pitch >> 8).to_u8)
+        bus.write_io(0x88_u8, 0x22_u8)
+        bus.write_io(0x90_u8, 0x01_u8)
+        bus.write_io(0x91_u8, 0x80_u8)
+      end
+
+      private def self.queue_audio(device : UInt32, samples : Array(Int16)) : Nil
+        return if samples.empty?
+        bytes = (samples.size * sizeof(Int16)).to_u32
+        # Keep at most about five video frames queued. This bounds input-to-audio
+        # latency while tolerating ordinary scheduler jitter.
+        LibSDL.clear_queued_audio(device) if LibSDL.get_queued_audio_size(device) > 6_400_u32
+        check(LibSDL.queue_audio(device, samples.to_unsafe.as(Void*), bytes))
+      end
+
+      private def self.handle_debug_key(scancode : Int32, repeat : UInt8, debugger : Frontend::Debugger,
+                                        machine : Core::Machine, bus : Core::WonderSwanBus, audio_device : UInt32) : Nil
+        return unless repeat == 0_u8
+        case scancode
+        when SC_F1
+          debugger.toggle_visible
+        when SC_SPACE
+          debugger.toggle_pause
+          LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
+        when SC_N
+          debugger.request_step
+        when SC_1, SC_2, SC_3
+          debugger.toggle_layer(bus, scancode - SC_1)
+        when SC_PAGEUP
+          debugger.move_memory(-8)
+        when SC_PAGEDOWN
+          debugger.move_memory(8)
+        when SC_F5
+          StateStore.save(machine, bus)
+        when SC_F9
+          StateStore.load(machine, bus)
+          LibSDL.clear_queued_audio(audio_device)
+        end
       end
     end
   end

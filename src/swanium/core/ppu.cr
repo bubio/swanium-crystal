@@ -70,6 +70,26 @@ module Swanium
         @sprite_latch_valid = false
       end
 
+      def save_state(io : IO) : Nil
+        io.write_byte(@current_line)
+        io.write_bytes(@sprite_count.to_u16, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@next_sprite_count.to_u16, IO::ByteFormat::LittleEndian)
+        io.write_byte(@sprite_latch_valid ? 1_u8 : 0_u8)
+        @rgb444.each { |pixel| io.write_bytes(pixel, IO::ByteFormat::LittleEndian) }
+        write_sprites(io, @sprites)
+        write_sprites(io, @next_sprites)
+      end
+
+      def load_state(io : IO) : Nil
+        @current_line = read_byte(io)
+        @sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
+        @next_sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
+        @sprite_latch_valid = read_byte(io) != 0_u8
+        @rgb444.map! { io.read_bytes(UInt16, IO::ByteFormat::LittleEndian) }
+        @sprites = read_sprites(io)
+        @next_sprites = read_sprites(io)
+      end
+
       def latch_sprites_if_needed(wram : Bytes, ports : Bytes) : Nil
         latch_sprites(wram, ports, @sprites) unless @sprite_latch_valid
         @sprite_latch_valid = true
@@ -146,6 +166,38 @@ module Swanium
         tx = 7 - tx if (word & 0x4000) != 0
         ty = 7 - ty if (word & 0x8000) != 0
         {tile_pixel(wram, ports, tile, tx, ty, color_mode), ((word >> 9) & 0x0F).to_u8}
+      end
+
+      private def write_sprites(io : IO, sprites : Array(Sprite)) : Nil
+        sprites.each do |sprite|
+          io.write_bytes(sprite.tile, IO::ByteFormat::LittleEndian)
+          io.write_byte(sprite.palette)
+          io.write_byte(sprite.x)
+          io.write_byte(sprite.y)
+          flags = 0_u8
+          flags |= 0x01_u8 if sprite.priority
+          flags |= 0x02_u8 if sprite.window
+          flags |= 0x04_u8 if sprite.hflip
+          flags |= 0x08_u8 if sprite.vflip
+          io.write_byte(flags)
+        end
+      end
+
+      private def read_sprites(io : IO) : Array(Sprite)
+        Array(Sprite).new(128) do
+          tile = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
+          palette = read_byte(io)
+          x = read_byte(io)
+          y = read_byte(io)
+          flags = read_byte(io)
+          Sprite.new(tile, palette, x, y,
+            (flags & 0x01_u8) != 0_u8, (flags & 0x02_u8) != 0_u8,
+            (flags & 0x04_u8) != 0_u8, (flags & 0x08_u8) != 0_u8)
+        end
+      end
+
+      private def read_byte(io : IO) : UInt8
+        io.read_byte || raise IO::EOFError.new
       end
 
       private def tile_pixel(wram : Bytes, ports : Bytes, tile : UInt16, tx : Int32,

@@ -1,7 +1,10 @@
 require "option_parser"
 require "./swanium/core/machine"
+require "./swanium/core/save_state"
 require "./swanium/core/video_test_pattern"
+require "./swanium/frontend/debugger"
 require "./swanium/platform/sdl"
+require "./swanium/platform/state_store"
 
 module Swanium
   VERSION = "0.1.0"

@@ -53,6 +53,10 @@ module Swanium
       getter save_ram : Bytes
       getter ports : Bytes
       getter keys : UInt16
+      getter linear_offset : UInt8
+      getter ram_bank : UInt8
+      getter rom_bank0 : UInt8
+      getter rom_bank1 : UInt8
 
       def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono)
         raise ArgumentError.new("save RAM size must not be negative") if save_ram_size < 0
@@ -228,6 +232,21 @@ module Swanium
       def set_current_scanline(line : UInt8) : Nil
         @ports[0x02] = line
         request_interrupt(WonderSwanInterrupt::ScanlineMatch) if line == @ports[0x03]
+      end
+
+      def restore_state(work_ram : Bytes, save_ram : Bytes, ports : Bytes, keys : UInt16,
+                        linear_offset : UInt8, ram_bank : UInt8, rom_bank0 : UInt8, rom_bank1 : UInt8) : Nil
+        raise ArgumentError.new("state RAM size does not match machine") unless work_ram.size == @work_ram.size && save_ram.size == @save_ram.size
+        raise ArgumentError.new("state port file has invalid size") unless ports.size == @ports.size
+        @work_ram.copy_from(work_ram)
+        @save_ram.copy_from(save_ram)
+        @ports.copy_from(ports)
+        @keys = keys
+        @linear_offset = linear_offset
+        @ram_bank = ram_bank
+        @rom_bank0 = rom_bank0
+        @rom_bank1 = rom_bank1
+        @pending_wait_cycles = 0_u32
       end
 
       private def read_work_ram(address : UInt32) : UInt8
