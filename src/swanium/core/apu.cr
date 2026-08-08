@@ -2,6 +2,7 @@ require "./wonder_swan_wave_generator"
 require "./pcm_sample_buffer"
 require "./wonder_swan_noise_generator"
 require "./wonder_swan_voice_channel"
+require "./wonder_swan_sweep_generator"
 
 module Swanium
   module Core
@@ -16,9 +17,7 @@ module Swanium
       def initialize
         @waves = WonderSwanWaveGenerator.new
         @noise = WonderSwanNoiseGenerator.new
-        @sweep_counter = 0_u32
-        @sweep_step = 0_u8
-        @fast_sweep_primed = false
+        @sweep = WonderSwanSweepGenerator.new
         @sample_accumulator = 0_u32
         @voice = WonderSwanVoiceChannel.new
         @pcm = PcmSampleBuffer.new
@@ -27,9 +26,7 @@ module Swanium
       def reset : Nil
         @waves.reset
         @noise.reset
-        @sweep_counter = 0_u32
-        @sweep_step = 0_u8
-        @fast_sweep_primed = false
+        @sweep.reset
         @sample_accumulator = 0_u32
         @voice.reset
         @pcm.reset
@@ -104,7 +101,7 @@ module Swanium
         end
 
         cycles.times do
-          step_sweep(ports)
+          @sweep.step(ports)
           @noise.step(ports, color_hardware)
           @waves.step(wram, ports)
           @sample_accumulator += 1_u32
@@ -119,9 +116,7 @@ module Swanium
       def save_state(io : IO) : Nil
         @waves.save_state(io)
         @noise.save_state(io)
-        io.write_bytes(@sweep_counter, IO::ByteFormat::LittleEndian)
-        io.write_byte(@sweep_step)
-        io.write_byte(@fast_sweep_primed ? 1_u8 : 0_u8)
+        @sweep.save_state(io)
         io.write_bytes(@sample_accumulator, IO::ByteFormat::LittleEndian)
         @voice.save_state(io)
         @pcm.save_state(io)
@@ -130,9 +125,7 @@ module Swanium
       def load_state(io : IO) : Nil
         @waves.load_state(io)
         @noise.load_state(io)
-        @sweep_counter = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
-        @sweep_step = read_byte(io)
-        @fast_sweep_primed = read_byte(io) != 0_u8
+        @sweep.load_state(io)
         @sample_accumulator = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         @voice.load_state(io)
         @pcm.load_state(io)
@@ -150,7 +143,7 @@ module Swanium
       end
 
       private def tick_silence(cycles : UInt32, ports : Bytes) : Nil
-        @fast_sweep_primed = false
+        @sweep.deactivate
         total = @sample_accumulator + cycles
         sample_count = total // CYCLES_PER_SAMPLE
         @sample_accumulator = total % CYCLES_PER_SAMPLE
@@ -173,7 +166,7 @@ module Swanium
 
       private def tick_waves_only(cycles : UInt32, wram : Bytes, ports : Bytes,
                                   color_rendering_enabled : Bool) : Nil
-        @fast_sweep_primed = false
+        @sweep.deactivate
         remaining = cycles
         while remaining > 0_u32
           until_sample = CYCLES_PER_SAMPLE - @sample_accumulator
@@ -187,39 +180,6 @@ module Swanium
           end
         end
         publish_output_ports(ports)
-      end
-
-      private def step_sweep(ports : Bytes) : Nil
-        unless (ports[0x90] & 0x44_u8) == 0x44_u8
-          @fast_sweep_primed = false
-          return
-        end
-
-        fast = (ports[0x95] & 0x02_u8) != 0_u8
-        if fast
-          unless @fast_sweep_primed
-            @fast_sweep_primed = true
-            return
-          end
-        else
-          @fast_sweep_primed = false
-        end
-        @sweep_counter += 1_u32
-        return if @sweep_counter <= (fast ? 0_u32 : 8192_u32)
-        @sweep_counter = 0_u32
-        if @sweep_step != 0_u8
-          @sweep_step &-= 1_u8
-          return
-        end
-        @sweep_step = ports[0x8D] & 0x1F_u8
-        @sweep_step &-= 1_u8 if @sweep_step > 0_u8
-
-        # Sweep overflow wraps to the opposite edge, rather than saturating.
-        # This is the V30-compatible hardware behavior exercised by ws-test.
-        pitch = read_pitch(ports, 2).to_i32 + ports[0x8C].unsafe_as(Int8).to_i32
-        pitch = pitch > 0x7FF ? 0 : pitch < 0 ? 0x7FF : pitch
-        ports[0x84] = (pitch & 0xFF).to_u8
-        ports[0x85] = ((pitch >> 8) & 0x07).to_u8
       end
 
       private def mix_sample(ports : Bytes, color_hardware : Bool) : Nil
