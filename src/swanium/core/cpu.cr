@@ -930,11 +930,10 @@ module Swanium
 
       private def execute_bound(bus : MemoryBus) : UInt32
         mod_rm = decode_mod_rm(bus)
-        unless address = mod_rm.operand.memory?
-          @fault_opcode = 0x62_u8
-          @halted = true
-          return 1_u32
-        end
+        # Rust Swanium (and the V30 compatibility tests) treats the register
+        # form as a no-op after decoding its ModRM byte. Only memory operands
+        # contain the lower/upper bound pair.
+        return 13_u32 unless address = mod_rm.operand.memory?
         index = signed16(@registers.reg16(mod_rm.reg))
         lower = signed16(bus.read_u16(address))
         upper = signed16(bus.read_u16(address &+ 2_u32))
@@ -1024,10 +1023,10 @@ module Swanium
           push16(bus, @registers.ip)
           @registers.ip = new_ip
           @registers.cs = new_cs
-          9_u32
+          12_u32
         when 4_u8
           @registers.ip = read_operand16(bus, mod_rm.operand)
-          cycles(mod_rm.operand, 3_u32, 5_u32)
+          cycles(mod_rm.operand, 4_u32, 5_u32)
         when 5_u8
           return unsupported_group5 unless address = mod_rm.operand.memory?
           @registers.ip = bus.read_u16(address)

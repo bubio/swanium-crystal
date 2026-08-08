@@ -45,6 +45,13 @@ module Swanium
           @interrupts.request(InterruptSource::Timer)
         end
 
+        # The V30 trap flag raises INT 1 after each executed instruction. It
+        # is an architectural exception, so IF does not gate it and it takes
+        # priority over a maskable device request at the same boundary.
+        if @cpu.flags.trap
+          cycles += @cpu.service_interrupt(bus, 1_u8)
+        end
+
         if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
           if source = @interrupts.next_pending?
             @interrupts.clear(source)
@@ -61,9 +68,17 @@ module Swanium
       def step_wonder_swan(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
         bus.consume_voice_writes.each { |sample| @apu.write_voice(sample) }
-        if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
-          if vector = bus.pending_interrupt_vector?
+        if @cpu.flags.trap
+          cycles += @cpu.service_interrupt(bus, 1_u8)
+        end
+        if vector = bus.pending_interrupt_vector?
+          if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
             cycles += @cpu.service_interrupt(bus, vector)
+          elsif @cpu.halted && (bus.ports[0xB4] & (1_u8 << WonderSwanInterrupt::VBlank.value)) != 0_u8
+            # A pending VBlank wakes HLT even when IF remains clear. The
+            # request stays latched; only normal maskable delivery acknowledges
+            # it once IF is enabled.
+            @cpu.halted = false
           end
         end
         @cycles += cycles

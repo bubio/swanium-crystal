@@ -97,6 +97,39 @@ describe Swanium::Core::Machine do
     machine.cpu.flags.interrupt.should be_false
   end
 
+  it "delivers INT 1 after an instruction when the V30 trap flag is set" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.write_u8(0_u32, 0x90_u8) # NOP
+    memory.write_u16(4_u32, 0x3456_u16)
+    memory.write_u16(6_u32, 0x789A_u16)
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+    machine.cpu.registers.ss = 0_u16
+    machine.cpu.registers.sp = 0xFFFE_u16
+    machine.cpu.flags.trap = true
+
+    machine.step(memory).should eq(11_u32)
+
+    machine.cpu.registers.ip.should eq(0x3456_u16)
+    machine.cpu.registers.cs.should eq(0x789A_u16)
+    machine.cpu.flags.trap.should be_false
+    machine.cpu.flags.interrupt.should be_false
+  end
+
+  it "wakes HLT on a pending VBlank even while maskable interrupts are disabled" do
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_u8(0_u32, 0xF4_u8)
+    bus.write_io(0xB2_u8, 0x40_u8)
+    bus.on_vblank
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+
+    machine.step_wonder_swan(bus)
+
+    machine.cpu.halted.should be_false
+    bus.ports[0xB4].should eq(0x40_u8)
+  end
+
   it "runs a headless program through an HBlank interrupt and back to HLT" do
     # STI ; HLT ; HLT
     # Handler at 0000:0100: MOV byte [0200],5A ; ACK HBlank ; IRET

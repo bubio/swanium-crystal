@@ -218,4 +218,26 @@ describe "Rust V30 extension parity" do
   it "matches Rust bound_above_upper_raises_int5" do
     bound_cpu(20_u16, 0_u16, 10_u16).registers.ip.should eq(0x0050_u16)
   end
+
+  it "matches Rust bound_register_form_as_a_no_op" do
+    cpu, memory = extension_cpu(Bytes[0x62, 0xC0])
+    cpu.registers.ax = 0x1234_u16
+    cpu.step(memory).should eq(13_u32)
+    cpu.registers.ip.should eq(2_u16)
+    cpu.registers.ax.should eq(0x1234_u16)
+    cpu.halted.should be_false
+    cpu.fault_opcode.should be_nil
+  end
+
+  it "matches Rust FF indirect far-call and near-jump timing" do
+    cpu, memory = extension_cpu(Bytes[0xFF, 0x1E, 0x10, 0x00])
+    memory.write_u16(0x10_u32, 0x1234_u16)
+    memory.write_u16(0x12_u32, 0x5678_u16)
+    cpu.step(memory).should eq(12_u32)
+
+    cpu, memory = extension_cpu(Bytes[0xFF, 0xE0])
+    cpu.registers.ax = 0x1234_u16
+    cpu.step(memory).should eq(4_u32)
+    cpu.registers.ip.should eq(0x1234_u16)
+  end
 end
