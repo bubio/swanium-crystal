@@ -248,7 +248,7 @@ module Swanium
         display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
         rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
         begin
-          StateStore.load_cartridge_save(bus, title)
+          StateStore.default.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
             display_width * 3, display_height * 3, WINDOW_SHOWN
@@ -347,7 +347,7 @@ module Swanium
             end
           end
         ensure
-          StateStore.save_cartridge_save(bus, title)
+          StateStore.default.save_cartridge_save(bus, title)
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           LibSDL.game_controller_close(controller) unless controller.null?
           LibSDL.destroy_texture(texture) unless texture.null?
@@ -513,9 +513,9 @@ module Swanium
         when SC_PAGEDOWN
           debugger.move_memory(8)
         when SC_F5
-          StateStore.save(machine, bus, game_id)
+          StateStore.default.save(machine, bus, game_id)
         when SC_F9
-          StateStore.load(machine, bus, game_id)
+          StateStore.default.load(machine, bus, game_id)
           LibSDL.clear_queued_audio(audio_device)
         end
       end

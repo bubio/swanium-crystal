@@ -4,17 +4,28 @@ module Swanium
   module Platform
     # Restricts save states to Swanium's own settings directory and numbered
     # slots, so arbitrary paths never enter the product UI.
-    module StateStore
-      def self.path(game_id : String = "demo", slot : Int32 = 0) : Path
+    class StateStore
+      @@default : StateStore? = nil
+
+      def initialize(@root : Path = self.class.default_root)
+      end
+
+      def self.default : StateStore
+        @@default ||= new
+      end
+
+      def path(game_id : String = "demo", slot : Int32 = 0) : Path
         raise ArgumentError.new("save-state slot must be between 0 and 9") unless slot.in?(0..9)
-        state_root / "swanium-crystal" / "states" / "#{safe_name(game_id)}-#{slot}.swcstate"
+        @root / "swanium-crystal" / "states" / "#{safe_name(game_id)}-#{slot}.swcstate"
       end
 
-      def self.cartridge_save_path(game_id : String) : Path
-        state_root / "swanium-crystal" / "saves" / "#{safe_name(game_id)}.sav"
+      def cartridge_save_path(game_id : String) : Path
+        @root / "swanium-crystal" / "saves" / "#{safe_name(game_id)}.sav"
       end
 
-      private def self.state_root : Path
+      # The application may inspect the platform-default root while tests and
+      # alternate frontends inject a different root through the initializer.
+      def self.default_root : Path
         state_root = if root = ENV["XDG_STATE_HOME"]?
                        Path[root]
                      else
@@ -27,19 +38,19 @@ module Swanium
         state_root
       end
 
-      def self.save(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
+      def save(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
         destination = path(game_id, slot)
         write_atomically(destination, Core::SaveState.dump(machine, bus))
         destination
       end
 
-      def self.load(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
+      def load(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
         source = path(game_id, slot)
         Core::SaveState.load(File.read(source).to_slice, machine, bus)
         source
       end
 
-      def self.load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil
+      def load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil
         return unless bus.has_save_ram?
         source = cartridge_save_path(game_id)
         return unless File.exists?(source)
@@ -48,14 +59,14 @@ module Swanium
         bus.replace_save_ram(bytes)
       end
 
-      def self.save_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Path?
+      def save_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Path?
         return nil unless bus.has_save_ram?
         destination = cartridge_save_path(game_id)
         write_atomically(destination, bus.save_ram_snapshot)
         destination
       end
 
-      private def self.write_atomically(destination : Path, contents : Bytes) : Nil
+      private def write_atomically(destination : Path, contents : Bytes) : Nil
         Dir.mkdir_p(destination.parent)
         temporary = destination.parent / ".#{destination.basename}.#{Process.pid}.tmp"
         begin
@@ -66,7 +77,7 @@ module Swanium
         end
       end
 
-      private def self.safe_name(value : String) : String
+      private def safe_name(value : String) : String
         value.gsub(/[^A-Za-z0-9._-]+/, "_")
       end
     end
