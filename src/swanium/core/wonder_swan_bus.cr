@@ -247,7 +247,7 @@ module Swanium
         when 0x9E_u8                            then @ports[port] & 0x03_u8
         when 0x9F_u8, 0xA1_u8                   then 0_u8
         when 0xC4_u8, 0xC5_u8, 0xC6_u8, 0xC7_u8 then @eeprom ? @ports[port] : OPEN_BUS
-        when 0xC8_u8                            then @eeprom ? 0x02_u8 : OPEN_BUS
+        when 0xC8_u8                            then @eeprom ? 0x02_u8 | (@ports[port] & 0x01_u8) : OPEN_BUS
         when 0x52_u8                            then @ports[port] & 0xDF_u8
         when 0xCA_u8                            then @rtc ? @rtc.not_nil!.read_command : Rtc::OPEN_BUS
         when 0xCB_u8                            then @rtc ? @rtc.not_nil!.read_data : Rtc::OPEN_BUS
@@ -417,7 +417,14 @@ module Swanium
       # Called by the LCD scheduler at the beginning of HBlank.
       def on_hblank : Nil
         counter = read_port_u16(0xA8_u8)
-        return if counter == 0_u16 || (@ports[0xA2] & 0x01_u8) == 0_u8
+        return if counter == 0_u16
+
+        # The final count can still latch when its interrupt source is enabled,
+        # even if the HBlank timer enable bit was cleared. This hardware quirk
+        # is observable by WSHWTest and is relied upon by timer wait loops.
+        enabled = (@ports[0xA2] & 0x01_u8) != 0_u8
+        irq_enabled = (@ports[0xB2] & (1_u8 << WonderSwanInterrupt::HBlankTimer.value)) != 0_u8
+        return unless enabled || (counter == 1_u16 && irq_enabled)
 
         if counter == 1_u16
           request_interrupt(WonderSwanInterrupt::HBlankTimer)
@@ -702,6 +709,11 @@ module Swanium
         when 4_u8
           eeprom.execute(command)
         end
+        done = case value >> 4
+               when 1_u8, 8_u8 then 1_u8
+               else                 0_u8
+               end
+        @ports[0xC8] = (value & 0xF0_u8) | 0x02_u8 | done
       end
 
       private def read_port_u16(port : UInt8) : UInt16

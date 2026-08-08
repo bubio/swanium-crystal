@@ -95,6 +95,20 @@ describe Swanium::Core::WonderSwanBus do
     bus.pending_interrupt_vector?.should be_nil
   end
 
+  it "latches a final HBlank count when only its interrupt is enabled" do
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_io(0xB2_u8, 0x80_u8)
+    bus.write_io(0xA4_u8, 1_u8)
+    # A2 bit 0 remains clear: the final-count interrupt is the hardware quirk.
+    bus.on_hblank
+    bus.read_io(0xB4_u8).should eq(0x80_u8)
+
+    disabled = Swanium::Core::WonderSwanBus.new
+    disabled.write_io(0xA4_u8, 1_u8)
+    disabled.on_hblank
+    disabled.read_io(0xB4_u8).should eq(0_u8)
+  end
+
   it "scans keypad groups and latches only new key presses" do
     bus = Swanium::Core::WonderSwanBus.new
     bus.write_io(0xB2_u8, 0x02_u8)

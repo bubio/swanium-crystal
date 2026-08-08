@@ -126,6 +126,7 @@ describe Swanium::Core::CartridgeImage do
     bus.write_io(0xC7_u8, (command >> 8).to_u8)
     bus.write_io(0xC8_u8, 0x10_u8)
     (bus.read_io(0xC4_u8).to_u16 | (bus.read_io(0xC5_u8).to_u16 << 8)).should eq(0xBEEF_u16)
+    bus.read_io(0xC8_u8).should eq(0x03_u8)
     bus.save_ram[0].should eq(0xEF_u8)
     bus.save_ram[1].should eq(0xBE_u8)
   end
