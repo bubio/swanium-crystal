@@ -78,6 +78,25 @@ describe Swanium::Core::Machine do
     machine.framebuffer_rgba.size.should eq(Swanium::Core::Ppu::PIXEL_COUNT * 4)
   end
 
+  it "anchors successive frame deadlines to the master clock after an instruction overrun" do
+    # TEST AL, 0 sets ZF once; JZ -2 then loops in five-cycle instructions.
+    # A frame contains 40,704 cycles, which does not divide by five.
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_u8(0_u32, 0xA8_u8)
+    bus.write_u8(1_u32, 0_u8)
+    bus.write_u8(2_u32, 0x74_u8)
+    bus.write_u8(3_u32, 0xFE_u8)
+    machine = Swanium::Core::Machine.new
+    machine.cpu.reset(0_u16, 0_u16)
+
+    machine.run_wonder_swan_frame(bus)
+    machine.cycles.should eq(40_706_u64)
+    machine.run_wonder_swan_frame(bus)
+    machine.cycles.should eq(81_411_u64)
+    machine.run_wonder_swan_frame(bus)
+    machine.cycles.should eq(122_116_u64)
+  end
+
   it "delays a pending maskable interrupt for one instruction after STI" do
     bus = Swanium::Core::WonderSwanBus.new
     bus.write_u8(0_u32, 0xFB_u8)

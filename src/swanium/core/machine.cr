@@ -10,6 +10,8 @@ module Swanium
     # Platform-independent owner for emulation state. Hardware components will be
     # added here without exposing SDL, filesystem, or wall-clock dependencies.
     class Machine
+      @next_frame_cycle : UInt64
+
       CYCLES_PER_SCANLINE = 256_u32
       VISIBLE_SCANLINES   = 144_u16
       SCANLINES_PER_FRAME = 159_u16
@@ -30,6 +32,11 @@ module Swanium
         @ppu = Ppu.new
         @scanline_cycles = 0_u32
         @scanline = 0_u16
+        # Frame requests are anchored to the machine clock, rather than to the
+        # end of the previous request. CPU instructions are atomic and may
+        # cross a deadline; anchoring prevents that bounded overrun from
+        # accumulating into permanent video/audio drift.
+        @next_frame_cycle = CYCLES_PER_FRAME
       end
 
       def run_cycles(cycles : UInt32) : Nil
@@ -107,17 +114,19 @@ module Swanium
         cycles
       end
 
-      # Run a complete 159-line WonderSwan video frame with one stable input
-      # snapshot. This is deliberately driven from emulated cycles rather than
-      # wall-clock time, so headless test ROMs observe the same input and timer
-      # schedule as a frontend would.
+      # Advance to the next fixed 159-line WonderSwan frame deadline with one
+      # stable input snapshot. This is deliberately driven from emulated cycles
+      # rather than wall-clock time, so headless test ROMs observe the same
+      # input and timer schedule as a frontend would. A CPU instruction is
+      # indivisible and can cross a deadline; the following deadline remains
+      # anchored to the master clock so that crossing does not accumulate drift.
       def run_wonder_swan_frame(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
         bus.set_keys(keys)
         @ppu.latch_sprites_if_needed(bus.work_ram, bus.ports)
-        target_cycles = @cycles + CYCLES_PER_FRAME
-        while @cycles < target_cycles
+        while @cycles < @next_frame_cycle
           step_wonder_swan(bus)
         end
+        @next_frame_cycle += CYCLES_PER_FRAME
       end
 
       private def advance_wonder_swan_display(bus : WonderSwanBus, cycles : UInt32) : Nil
@@ -155,10 +164,15 @@ module Swanium
         @cycles = cycles
         @scanline = scanline
         @scanline_cycles = scanline_cycles
+        @next_frame_cycle = next_frame_cycle_after(cycles)
       end
 
       def scanline_cycles : UInt32
         @scanline_cycles
+      end
+
+      private def next_frame_cycle_after(cycles : UInt64) : UInt64
+        cycles - (cycles % CYCLES_PER_FRAME) + CYCLES_PER_FRAME
       end
     end
   end
