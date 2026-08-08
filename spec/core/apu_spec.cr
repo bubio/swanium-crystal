@@ -13,6 +13,20 @@ describe Swanium::Core::Apu do
     apu.samples.should eq([0_i16, 0_i16])
   end
 
+  it "fast-forwards silent audio while keeping sample timing and output ports" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    ports[0x96] = 0xFF_u8
+
+    apu.tick(127_u32, wram, ports)
+    apu.samples.should be_empty
+    ports[0x96].should eq(0_u8)
+
+    apu.tick(1_u32, wram, ports)
+    apu.samples.should eq([0_i16, 0_i16])
+  end
+
   it "keeps a deterministic PCM hash for the audio test waveform" do
     apu = Swanium::Core::Apu.new
     wram = Bytes.new(0x10000, 0_u8)

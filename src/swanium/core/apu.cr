@@ -104,6 +104,11 @@ module Swanium
 
       def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false,
                color_rendering_enabled : Bool = color_hardware) : Nil
+        if silent_fast_path?(ports, color_rendering_enabled)
+          tick_silence(cycles, ports)
+          return
+        end
+
         cycles.times do
           step_sweep(ports)
           step_noise(ports, color_hardware)
@@ -176,6 +181,30 @@ module Swanium
           end
           @channels[index] = channel
         end
+      end
+
+      # With every sound source disabled, the per-cycle oscillator work has no
+      # observable effect. Keep the sample clock and output register shadow in
+      # lockstep while skipping the empty channel scan. A noise reset or an
+      # open noise gate must use the normal path: Crystal software such as
+      # Clock Tower reads the LFSR even while channel four is inaudible.
+      private def silent_fast_path?(ports : Bytes, color_rendering_enabled : Bool) : Bool
+        ports[0x90] == 0_u8 &&
+          (ports[0x8E] & 0x18_u8) == 0_u8 &&
+          (!color_rendering_enabled || (ports[0x6A] & 0x80_u8) == 0_u8)
+      end
+
+      private def tick_silence(cycles : UInt32, ports : Bytes) : Nil
+        @fast_sweep_primed = false
+        total = @sample_accumulator + cycles
+        sample_count = total // CYCLES_PER_SAMPLE
+        @sample_accumulator = total % CYCLES_PER_SAMPLE
+        if sample_count > 0_u32
+          @voice_previous = 0_i32
+          @voice_level = 0_i32
+          sample_count.times { @samples << 0_i16 << 0_i16 }
+        end
+        0x96_u8.upto(0x9B_u8) { |port| ports[port] = 0_u8 }
       end
 
       private def step_noise(ports : Bytes, color_hardware : Bool) : Nil
