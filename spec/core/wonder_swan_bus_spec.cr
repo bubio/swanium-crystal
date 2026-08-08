@@ -149,4 +149,61 @@ describe Swanium::Core::WonderSwanBus do
     bus.consume_wait_cycles.should eq(7_u32)
     bus.consume_wait_cycles.should eq(0_u32)
   end
+
+  it "streams Color SDMA into the voice channel and completes the transfer" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    apu = Swanium::Core::Apu.new
+    bus.write_u8(0x10_u32, 0xA5_u8)
+    bus.write_io(0x90_u8, 0x20_u8)
+    bus.write_io(0x4A_u8, 0x10_u8)
+    bus.write_io(0x4B_u8, 0_u8)
+    bus.write_io(0x4E_u8, 1_u8)
+    bus.write_io(0x4F_u8, 0_u8)
+    bus.write_io(0x52_u8, 0x83_u8)
+
+    bus.tick_sound(128_u32, apu)
+
+    bus.read_io(0x89_u8).should eq(0xA5_u8)
+    bus.read_io(0x4A_u8).should eq(0x11_u8)
+    bus.read_io(0x4E_u8).should eq(0_u8)
+    bus.read_io(0x52_u8).should eq(0x03_u8)
+  end
+
+  it "supports SDMA decrement, repeat, hold, and 20-bit register masks" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    apu = Swanium::Core::Apu.new
+    bus.write_io(0x4C_u8, 0xFF_u8)
+    bus.write_io(0x50_u8, 0xFF_u8)
+    bus.read_io(0x4C_u8).should eq(0x0F_u8)
+    bus.read_io(0x50_u8).should eq(0x0F_u8)
+    bus.write_io(0x4C_u8, 0_u8)
+    bus.write_io(0x50_u8, 0_u8)
+
+    bus.write_u8(0x10_u32, 0x12_u8)
+    bus.write_io(0x90_u8, 0x20_u8)
+    bus.write_io(0x4A_u8, 0x10_u8)
+    bus.write_io(0x4E_u8, 1_u8)
+    bus.write_io(0x52_u8, 0xC3_u8)
+    bus.tick_sound(128_u32, apu)
+    bus.read_io(0x4A_u8).should eq(0x0F_u8)
+
+    bus.write_io(0x4A_u8, 0x10_u8)
+    bus.write_io(0x4E_u8, 1_u8)
+    bus.write_io(0x52_u8, 0x8B_u8)
+    bus.tick_sound(128_u32, apu)
+    bus.read_io(0x4A_u8).should eq(0x10_u8)
+    bus.read_io(0x4E_u8).should eq(1_u8)
+    bus.read_io(0x52_u8).should eq(0x8B_u8)
+
+    bus.write_io(0x52_u8, 0x87_u8)
+    bus.tick_sound(128_u32, apu)
+    bus.read_io(0x89_u8).should eq(0_u8)
+    bus.read_io(0x4E_u8).should eq(1_u8)
+  end
+
+  it "does not expose SDMA on original WonderSwan hardware" do
+    bus = Swanium::Core::WonderSwanBus.new
+    bus.write_io(0x52_u8, 0x83_u8)
+    bus.read_io(0x52_u8).should eq(0_u8)
+  end
 end

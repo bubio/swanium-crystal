@@ -1,4 +1,5 @@
 require "./memory_bus"
+require "./apu"
 require "./cartridge"
 require "./rtc"
 
@@ -50,6 +51,22 @@ module Swanium
     class WonderSwanBus < MemoryBus
       OPEN_BUS = 0xFF_u8
 
+      # SDMA feeds the Color/Crystal voice channel at a programmable cadence.
+      # Keep its latched transfer state separate from the CPU-visible ports so
+      # a save state can resume a transfer partway through its sample period.
+      private struct SdmaState
+        property source : UInt32
+        property counter : UInt32
+        property source_shadow : UInt32
+        property counter_shadow : UInt32
+        property clock : UInt32
+        property running : Bool
+
+        def initialize(@source = 0_u32, @counter = 0_u32, @source_shadow = 0_u32,
+                       @counter_shadow = 0_u32, @clock = 0_u32, @running = false)
+        end
+      end
+
       getter model : WonderSwanModel
       getter work_ram : Bytes
       getter save_ram : Bytes
@@ -86,6 +103,7 @@ module Swanium
         @rom_bank1_hi = 0xFF_u8
         @keys = 0_u16
         @voice_writes = [] of UInt8
+        @sdma = SdmaState.new
         @pending_wait_cycles = 0_u32
       end
 
@@ -134,6 +152,40 @@ module Swanium
         @rtc.try(&.load_state(io))
       end
 
+      def tick_sound(cycles : UInt32, apu : Apu) : Nil
+        unless @model.color? && sdma_enabled?
+          @sdma.running = false
+          @sdma.clock = 0_u32
+          apu.tick(cycles, @work_ram, @ports, @model.color?)
+          return
+        end
+
+        cycles.times do
+          tick_sdma_cycle(apu)
+          apu.tick(1_u32, @work_ram, @ports, @model.color?)
+        end
+      end
+
+      def save_sdma_state(io : IO) : Nil
+        io.write_bytes(@sdma.source, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@sdma.counter, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@sdma.source_shadow, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@sdma.counter_shadow, IO::ByteFormat::LittleEndian)
+        io.write_bytes(@sdma.clock, IO::ByteFormat::LittleEndian)
+        io.write_byte(@sdma.running ? 1_u8 : 0_u8)
+      end
+
+      def load_sdma_state(io : IO) : Nil
+        @sdma = SdmaState.new(
+          io.read_bytes(UInt32, IO::ByteFormat::LittleEndian),
+          io.read_bytes(UInt32, IO::ByteFormat::LittleEndian),
+          io.read_bytes(UInt32, IO::ByteFormat::LittleEndian),
+          io.read_bytes(UInt32, IO::ByteFormat::LittleEndian),
+          io.read_bytes(UInt32, IO::ByteFormat::LittleEndian),
+          (io.read_byte || raise IO::EOFError.new) != 0_u8
+        )
+      end
+
       def read_u8(address : UInt32) : UInt8
         address = address & ADDRESS_MASK
         case address
@@ -167,6 +219,7 @@ module Swanium
         when 0x20_u8..0x3F_u8                   then @ports[port] & mono_palette_port_mask(port)
         when 0xC4_u8, 0xC5_u8, 0xC6_u8, 0xC7_u8 then @eeprom ? @ports[port] : OPEN_BUS
         when 0xC8_u8                            then @eeprom ? 0x02_u8 : OPEN_BUS
+        when 0x52_u8                            then @ports[port] & 0xDF_u8
         when 0xCA_u8                            then @rtc ? @rtc.not_nil!.read_command : Rtc::OPEN_BUS
         when 0xCB_u8                            then @rtc ? @rtc.not_nil!.read_data : Rtc::OPEN_BUS
         when 0xC0_u8                            then @linear_offset
@@ -346,6 +399,7 @@ module Swanium
         @rom_bank0_hi = rom_bank0_hi
         @rom_bank1 = rom_bank1
         @rom_bank1_hi = rom_bank1_hi
+        @sdma = SdmaState.new
         @pending_wait_cycles = 0_u32
       end
 
@@ -362,6 +416,8 @@ module Swanium
         when 0x40_u8, 0x44_u8, 0x46_u8
           @ports[port] = value & 0xFE_u8
         when 0x42_u8
+          @ports[port] = value & 0x0F_u8
+        when 0x4C_u8, 0x50_u8
           @ports[port] = value & 0x0F_u8
         when 0x43_u8, 0x49_u8, 0x4D_u8, 0x51_u8, 0x53_u8..0x5F_u8
           # Reserved / read-only holes.
@@ -408,6 +464,96 @@ module Swanium
         @ports[0x48] &= 0x7F_u8
         request_interrupt(WonderSwanInterrupt::DmaComplete)
         transferred == 0_u32 ? 0_u32 : 5_u32 + transferred
+      end
+
+      private def sdma_enabled? : Bool
+        (@ports[0x52] & 0x80_u8) != 0_u8
+      end
+
+      private def tick_sdma_cycle(apu : Apu) : Nil
+        return unless start_sdma_if_needed
+
+        @sdma.clock += 1_u32
+        period = 128_u32 * sdma_rate
+        return if @sdma.clock < period
+
+        @sdma.clock -= period
+        transfer_sdma_byte(apu)
+      end
+
+      private def start_sdma_if_needed : Bool
+        return true if @sdma.running
+
+        counter = sdma_counter_from_ports
+        if counter == 0_u32
+          @ports[0x52] &= 0x7F_u8
+          return false
+        end
+
+        @sdma.source = sdma_source_from_ports
+        @sdma.counter = counter
+        @sdma.source_shadow = @sdma.source
+        @sdma.counter_shadow = counter
+        @sdma.clock = 0_u32
+        @sdma.running = true
+        true
+      end
+
+      private def transfer_sdma_byte(apu : Apu) : Nil
+        control = @ports[0x52]
+        if (control & 0x04_u8) != 0_u8
+          write_sdma_voice(0_u8, apu)
+          return
+        end
+
+        write_sdma_voice(read_u8(@sdma.source), apu)
+        if (control & 0x40_u8) != 0_u8
+          @sdma.source = (@sdma.source &- 1_u32) & ADDRESS_MASK
+        else
+          @sdma.source = (@sdma.source &+ 1_u32) & ADDRESS_MASK
+        end
+        @sdma.counter = (@sdma.counter &- 1_u32) & ADDRESS_MASK
+
+        if @sdma.counter == 0_u32
+          if (control & 0x08_u8) != 0_u8
+            @sdma.source = @sdma.source_shadow
+            @sdma.counter = @sdma.counter_shadow
+          else
+            @ports[0x52] &= 0x7F_u8
+            @sdma.running = false
+            @sdma.clock = 0_u32
+          end
+        end
+        write_sdma_ports
+      end
+
+      private def write_sdma_voice(value : UInt8, apu : Apu) : Nil
+        @ports[0x89] = value
+        apu.write_voice(value) if (@ports[0x90] & 0x20_u8) != 0_u8
+      end
+
+      private def sdma_rate : UInt32
+        case @ports[0x52] & 0x03_u8
+        when 0_u8 then 6_u32
+        when 1_u8 then 4_u32
+        when 2_u8 then 2_u32
+        else           1_u32
+        end
+      end
+
+      private def sdma_source_from_ports : UInt32
+        read_port_u16(0x4A_u8).to_u32 | ((@ports[0x4C] & 0x0F_u8).to_u32 << 16)
+      end
+
+      private def sdma_counter_from_ports : UInt32
+        read_port_u16(0x4E_u8).to_u32 | ((@ports[0x50] & 0x0F_u8).to_u32 << 16)
+      end
+
+      private def write_sdma_ports : Nil
+        write_port_u16(0x4A_u8, (@sdma.source & 0xFFFF_u32).to_u16)
+        @ports[0x4C] = ((@sdma.source >> 16) & 0x0F_u32).to_u8
+        write_port_u16(0x4E_u8, (@sdma.counter & 0xFFFF_u32).to_u16)
+        @ports[0x50] = ((@sdma.counter >> 16) & 0x0F_u32).to_u8
       end
 
       private def write_work_ram(address : UInt32, value : UInt8) : Nil
