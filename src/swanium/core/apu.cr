@@ -3,6 +3,7 @@ require "./pcm_sample_buffer"
 require "./wonder_swan_noise_generator"
 require "./wonder_swan_voice_channel"
 require "./wonder_swan_sweep_generator"
+require "./wonder_swan_hypervoice"
 
 module Swanium
   module Core
@@ -198,7 +199,7 @@ module Swanium
         left += voice_left
         right += voice_right
         if color_hardware && (ports[0x6A] & 0x80_u8) != 0_u8
-          hyper_left, hyper_right = hypervoice(ports)
+          hyper_left, hyper_right = WonderSwanHyperVoice.mix(ports, MIX_SCALE)
           left += hyper_left
           right += hyper_right
         end
@@ -214,42 +215,8 @@ module Swanium
         )
       end
 
-      private def hypervoice(ports : Bytes) : Tuple(Int32, Int32)
-        direct_left = signed_word(ports[0x64], ports[0x65])
-        direct_right = signed_word(ports[0x66], ports[0x67])
-        return {direct_left, direct_right} if direct_left != 0 || direct_right != 0
-
-        control = ports[0x6A]
-        shift = (control & 0x03_u8).to_i32
-        data = ports[0x69]
-        expanded = case control & 0x0C_u8
-                   when 0x00_u8 then data.to_i32 << (8 - shift)
-                   when 0x04_u8 then (data.to_i32 | -0x100) << (8 - shift)
-                   when 0x08_u8 then data.unsafe_as(Int8).to_i32 << (8 - shift)
-                   else              data.to_i32 << 8
-                   end
-        sample = (expanded & 0xFFFF).to_u16.unsafe_as(Int16).to_i32 >> 5
-        sample *= MIX_SCALE
-        routing = ports[0x6B]
-        {(routing & 0x40_u8) != 0_u8 ? sample : 0_i32,
-         (routing & 0x20_u8) != 0_u8 ? sample : 0_i32}
-      end
-
-      private def signed_word(low : UInt8, high : UInt8) : Int32
-        (low.to_u16 | (high.to_u16 << 8)).unsafe_as(Int16).to_i32
-      end
-
       private def publish_output_ports(ports : Bytes) : Nil
         0x96_u8.upto(0x9B_u8) { |port| ports[port] = read_output_port(port, ports) }
-      end
-
-      private def read_pitch(ports : Bytes, channel : Int32) : UInt16
-        offset = 0x80 + channel * 2
-        (ports[offset].to_u16 | (ports[offset + 1].to_u16 << 8)) & 0x07FF_u16
-      end
-
-      private def read_byte(io : IO) : UInt8
-        io.read_byte || raise IO::EOFError.new
       end
     end
   end
