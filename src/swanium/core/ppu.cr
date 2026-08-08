@@ -39,10 +39,11 @@ module Swanium
         @current_line = 0_u8
       end
 
-      # Native RGB444 pixels, row-major. The returned storage remains owned by
-      # the PPU and is valid for the lifetime of this object.
-      def framebuffer_rgb444 : Array(UInt16)
-        @rgb444
+      # Returns one native RGB444 pixel. The framebuffer remains owned by the
+      # PPU so inspection code cannot mutate a rendered frame behind it.
+      def pixel_rgb444(x : Int32, y : Int32) : UInt16
+        raise IndexError.new("pixel is outside the LCD bounds") unless x.in?(0...SCREEN_WIDTH) && y.in?(0...SCREEN_HEIGHT)
+        @rgb444[y * SCREEN_WIDTH + x]
       end
 
       # Stable frontend API: 224x144 pixels in RGBA8888, row-major, opaque.

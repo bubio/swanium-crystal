@@ -14,8 +14,8 @@ describe Swanium::Core::Ppu do
 
     bus.render_scanline(ppu, 0_u8)
 
-    ppu.framebuffer_rgb444[0].should eq(0x0FFF_u16)
-    ppu.framebuffer_rgb444[1].should eq(0x0000_u16)
+    ppu.pixel_rgb444(0, 0).should eq(0x0FFF_u16)
+    ppu.pixel_rgb444(1, 0).should eq(0x0000_u16)
   end
 
   it "supports packed and planar Color/Crystal 4bpp pixels" do
@@ -36,7 +36,7 @@ describe Swanium::Core::Ppu do
       end
 
       bus.render_scanline(ppu, 0_u8)
-      ppu.framebuffer_rgb444[0].should eq(color)
+      ppu.pixel_rgb444(0, 0).should eq(color)
     end
   end
 
@@ -58,7 +58,7 @@ describe Swanium::Core::Ppu do
 
     bus.render_scanline(ppu, 0_u8)
 
-    ppu.framebuffer_rgb444[0].should eq(0x0ABC_u16)
+    ppu.pixel_rgb444(0, 0).should eq(0x0ABC_u16)
     ppu.framebuffer_rgba[0, 4].should eq(Bytes[0xAA, 0xBB, 0xCC, 0xFF])
     ppu.framebuffer_rgba.same?(ppu.framebuffer_rgba).should be_true
   end
@@ -83,10 +83,10 @@ describe Swanium::Core::Ppu do
 
     bus.render_scanline(ppu, 0_u8)
 
-    ppu.framebuffer_rgb444[0].should eq(0x0123_u16)
-    ppu.framebuffer_rgb444[1].should eq(0x0456_u16)
-    ppu.framebuffer_rgb444[2].should eq(0x0456_u16)
-    ppu.framebuffer_rgb444[3].should eq(0x0123_u16)
+    ppu.pixel_rgb444(0, 0).should eq(0x0123_u16)
+    ppu.pixel_rgb444(1, 0).should eq(0x0456_u16)
+    ppu.pixel_rgb444(2, 0).should eq(0x0456_u16)
+    ppu.pixel_rgb444(3, 0).should eq(0x0123_u16)
   end
 
   it "matches the committed full-frame RGBA image snapshot" do
