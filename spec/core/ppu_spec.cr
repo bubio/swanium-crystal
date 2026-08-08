@@ -85,5 +85,4 @@ describe Swanium::Core::Ppu do
     ppu.pixel_rgb444(2, 0).should eq(0x0456_u16)
     ppu.pixel_rgb444(3, 0).should eq(0x0123_u16)
   end
-
 end

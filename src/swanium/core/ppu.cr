@@ -215,7 +215,6 @@ module Swanium
         x.to_u8 >= ports[base] && x.to_u8 <= ports[base + 2] &&
           y >= ports[base + 1] && y <= ports[base + 3]
       end
-
     end
   end
 end
