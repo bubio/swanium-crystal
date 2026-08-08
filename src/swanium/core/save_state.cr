@@ -9,7 +9,7 @@ module Swanium
     # deliberately left to the frontend; the core only accepts and returns bytes.
     module SaveState
       MAGIC   = "SWCST001".to_slice
-      VERSION = 6_u32
+      VERSION = 7_u32
 
       def self.dump(machine : Machine, bus : WonderSwanBus) : Bytes
         io = IO::Memory.new
@@ -89,6 +89,7 @@ module Swanium
         io.write_bytes(cpu.flags.to_u16, IO::ByteFormat::LittleEndian)
         io.write_byte(cpu.halted ? 1_u8 : 0_u8)
         io.write_byte(cpu.snapshot.interrupt_inhibit)
+        io.write_byte(cpu.snapshot.trap_inhibit)
       end
 
       private def self.read_cpu(io : IO) : CpuSnapshot
@@ -99,7 +100,7 @@ module Swanium
           cs: words[8], ds: words[9], ss: words[10], es: words[11], ip: words[12]
         )
         flags = Flags.from_u16(io.read_bytes(UInt16, IO::ByteFormat::LittleEndian))
-        CpuSnapshot.new(registers, flags, read_byte(io) != 0_u8, read_byte(io))
+        CpuSnapshot.new(registers, flags, read_byte(io) != 0_u8, read_byte(io), read_byte(io))
       end
 
       private def self.write_bytes(io : IO, bytes : Bytes) : Nil

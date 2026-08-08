@@ -65,5 +65,5 @@ description = "Opt-in WSCPUTest headless diagnostic (requires WS_CPU_TEST_ROM)"
 run = "crystal run tools/run_wscputest.cr"
 
 [tasks.public-roms]
-description = "Run opt-in public-ROM verification locally (requires the documented ROM environment variables)"
-depends = ["wscputest"]
+description = "Run source-confirmed public-ROM compatibility verification (requires the local Tests directory)"
+run = "crystal run tools/run_public_roms.cr"

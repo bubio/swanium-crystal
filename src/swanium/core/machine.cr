@@ -68,12 +68,18 @@ module Swanium
       def step_wonder_swan(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
         bus.consume_voice_writes.each { |sample| @apu.write_voice(sample) }
-        if @cpu.flags.trap
+        # STI and SS loads inhibit exactly one *following instruction
+        # boundary*, whether or not an IRQ happens to be pending there.  Do
+        # not defer this decrement until an IRQ appears: that would consume
+        # the delay after a long REP and lose its restart IP.
+        maskable_allowed = @cpu.maskable_interrupt_allowed?
+        trap_allowed = @cpu.trap_interrupt_allowed?
+        if @cpu.flags.trap && trap_allowed
           cycles += @cpu.service_interrupt(bus, 1_u8)
         end
         if vector = bus.pending_interrupt_vector?
-          if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
-            cycles += @cpu.service_interrupt(bus, vector)
+          if @cpu.flags.interrupt && maskable_allowed
+            cycles += service_wonder_swan_interrupt(bus, vector)
           elsif @cpu.halted && (bus.ports[0xB4] & (1_u8 << WonderSwanInterrupt::VBlank.value)) != 0_u8
             # A pending VBlank wakes HLT even when IF remains clear. The
             # request stays latched; only normal maskable delivery acknowledges
@@ -85,6 +91,19 @@ module Swanium
         bus.tick_sound(cycles, @apu)
         bus.tick_rtc(cycles)
         advance_wonder_swan_display(bus, cycles)
+        # A long REP can cross a scanline boundary and cause an IRQ only after
+        # its instruction cycles have advanced display state.  Acknowledge it
+        # here with the V30 restart IP, so IRET re-executes the REP prefix.
+        if vector = bus.pending_interrupt_vector?
+          if @cpu.flags.interrupt && maskable_allowed
+            interrupt_cycles = service_wonder_swan_interrupt(bus, vector)
+            cycles += interrupt_cycles
+            @cycles += interrupt_cycles
+            bus.tick_sound(interrupt_cycles, @apu)
+            bus.tick_rtc(interrupt_cycles)
+            advance_wonder_swan_display(bus, interrupt_cycles)
+          end
+        end
         cycles
       end
 
@@ -117,6 +136,14 @@ module Swanium
             @scanline = 0_u16
             @ppu.promote_next_frame_sprites
           end
+        end
+      end
+
+      private def service_wonder_swan_interrupt(bus : WonderSwanBus, vector : UInt8) : UInt32
+        if saved_ip = @cpu.take_interrupt_return_override_ip
+          @cpu.service_interrupt_at_ip(bus, vector, saved_ip)
+        else
+          @cpu.service_interrupt(bus, vector)
         end
       end
 

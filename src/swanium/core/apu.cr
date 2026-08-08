@@ -105,7 +105,7 @@ module Swanium
       def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false) : Nil
         cycles.times do
           step_sweep(ports)
-          step_noise(ports)
+          step_noise(ports, color_hardware)
           step_waves(wram, ports)
           @sample_accumulator += 1_u32
           if @sample_accumulator == CYCLES_PER_SAMPLE
@@ -177,19 +177,27 @@ module Swanium
         end
       end
 
-      private def step_noise(ports : Bytes) : Nil
+      private def step_noise(ports : Bytes, color_hardware : Bool) : Nil
         noise = ports[0x8E]
         if (noise & 0x08_u8) != 0_u8
-          @lfsr = 0_u16
-          @noise_output = 0_u8
-          ports[0x8E] &= 0xF7_u8
-          @noise_counter = 2048_u16 - read_pitch(ports, 3)
+          # Crystal owns the APU outside the bus, so consume the self-clearing
+          # reset request at the next sound tick after the OUT instruction.
+          reset_noise_lfsr(ports)
+          return
         end
         # The CPU-visible LFSR at 0x92/0x93 is a cartridge-visible random
         # source, not merely an audible channel-4 implementation detail.
         # Clock Tower reads it while loading with channel 4 muted; holding it
         # then leaves the game permanently on its black loading screen.
         return if (noise & 0x10_u8) == 0_u8
+        # Mono hardware only advances the exposed random register while the
+        # audible CH4 noise path is selected; SwanCrystal keeps clocking it
+        # behind the gate, matching Clock Tower's loading-time polling.
+        return unless color_hardware || (ports[0x90] & 0x88_u8) == 0x88_u8
+        # The gate controls the LFSR itself; CH4_ENABLE/CH4_NOISE control only
+        # whether its output is mixed. Clock Tower polls this register while
+        # channel four is muted during QUICK START, so gating it on audible
+        # output would leave its loader spinning forever.
         @noise_counter &-= 1_u16 if @noise_counter > 0_u16
         return unless @noise_counter == 0_u16
 

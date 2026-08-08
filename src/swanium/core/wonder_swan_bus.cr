@@ -227,6 +227,7 @@ module Swanium
           value
         when 0x4C_u8, 0x50_u8                   then @ports[port] & 0x0F_u8
         when 0x4D_u8, 0x51_u8, 0x53_u8..0x5F_u8 then 0_u8
+        when 0x61_u8, 0x63_u8                   then 0_u8
         when 0x64_u8..0x69_u8                   then 0_u8
         when 0x6A_u8                            then @ports[port]
         when 0x6B_u8                            then @ports[port] & 0x6F_u8
@@ -257,10 +258,12 @@ module Swanium
         when 0xD4_u8                            then mapper_2003? ? @rom_bank1 : OPEN_BUS
         when 0xD5_u8                            then mapper_2003? ? @rom_bank1_hi : OPEN_BUS
         when 0xA2_u8, 0xA3_u8                   then @ports[port] & 0x0F_u8
+        when 0xAD_u8..0xAF_u8                   then 0_u8
         when 0xA0_u8                            then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
         when 0xB0_u8
           @model == WonderSwanModel::Mono ? (@ports[port] & 0xF8_u8) | highest_pending_bit : @ports[port] & 0xF8_u8
         when 0xB4_u8
+          refresh_serial_tx_irq
           cause = @ports[port]
           # Key, scanline and timer sources are edge-triggered and clear on
           # INT_CAUSE reads. Serial/cartridge/DMA remain level-latched.
@@ -356,19 +359,23 @@ module Swanium
           @voice_writes << value if (@ports[0x90] & 0x20_u8) != 0_u8
         when 0xA2_u8, 0xA3_u8
           @ports[port] = value & 0x0F_u8
+        when 0x61_u8, 0x63_u8
+          # Unused system-control holes read as zero on SwanCrystal.
         when 0x40_u8..0x5F_u8
           write_dma_io(port, value) if color_rendering_enabled?
         when 0xA4_u8, 0xA5_u8, 0xA6_u8, 0xA7_u8
           @ports[port] = value
           @ports[port &+ 4_u8] = value
-        when 0xA8_u8..0xAB_u8, 0xB1_u8, 0xB4_u8
+        when 0xA8_u8..0xAB_u8, 0xAD_u8..0xAF_u8, 0xB1_u8, 0xB4_u8
           # Hardware-maintained counters and INT_CAUSE are read-only.
         when 0xB0_u8
           @ports[port] = value & 0xF8_u8
         when 0xB2_u8
           @ports[port] = value
+          refresh_serial_tx_irq
         when 0xB3_u8
           @ports[port] = value & 0xC4_u8
+          refresh_serial_tx_irq
         when 0xB5_u8
           @ports[port] = value & 0x70_u8
         when 0xB6_u8
@@ -732,6 +739,15 @@ module Swanium
           return priority.to_u8 if @ports[0xB4].bit(priority) == 1
         end
         0_u8
+      end
+
+      # Mono UART TX-ready is level-triggered: enabling both the UART and
+      # IRQ-0 immediately asserts it, ACK cannot clear it while that level is
+      # active.  Color/Crystal hardware does not expose this Mono-only level.
+      private def refresh_serial_tx_irq : Nil
+        if @model == WonderSwanModel::Mono && (@ports[0xB2] & 0x01_u8) != 0_u8 && (@ports[0xB3] & 0x80_u8) != 0_u8
+          @ports[0xB4] |= 0x01_u8
+        end
       end
 
       private def color_rendering_enabled? : Bool

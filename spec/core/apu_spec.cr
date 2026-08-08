@@ -9,7 +9,7 @@ describe Swanium::Core::Apu do
 
     apu.tick(127_u32, wram, ports)
     apu.samples.should be_empty
-    apu.tick(1_u32, wram, ports)
+    apu.tick(1_u32, wram, ports, true)
     apu.samples.should eq([0_i16, 0_i16])
   end
 
@@ -70,7 +70,7 @@ describe Swanium::Core::Apu do
     ports[0x8E] = 0x10_u8 # Noise gate only; channel 4 output stays muted.
     ports[0x90] = 0x08_u8
 
-    apu.tick(1_u32, wram, ports)
+    apu.tick(1_u32, wram, ports, true)
 
     ports[0x92].should eq(1_u8)
     ports[0x93].should eq(0_u8)

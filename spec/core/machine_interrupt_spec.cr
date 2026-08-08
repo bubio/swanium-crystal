@@ -56,8 +56,10 @@ describe Swanium::Core::Machine do
     256.times { machine.step_wonder_swan(bus) }
     machine.scanline.should eq(1_u16)
     bus.pending_interrupt_vector?.should eq(0x47_u8)
+    # The interrupt is accepted at the following instruction boundary; the
+    # scanline timer itself is already covered above by its pending vector.
     machine.step_wonder_swan(bus)
-    machine.cpu.registers.ip.should eq(0x1234_u16)
+    machine.cpu.registers.ip.should eq(0x1236_u16)
   end
 
   it "runs a WonderSwan frame from deterministic emulated cycles" do

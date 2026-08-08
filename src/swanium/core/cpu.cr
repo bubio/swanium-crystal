@@ -55,8 +55,9 @@ module Swanium
       getter flags : Flags
       getter halted : Bool
       getter interrupt_inhibit : UInt8
+      getter trap_inhibit : UInt8
 
-      def initialize(@registers : Registers, @flags : Flags, @halted : Bool, @interrupt_inhibit = 0_u8)
+      def initialize(@registers : Registers, @flags : Flags, @halted : Bool, @interrupt_inhibit = 0_u8, @trap_inhibit = 0_u8)
       end
     end
 
@@ -74,6 +75,8 @@ module Swanium
     # the 8086-compatible data, stack, ALU, and branch paths used by the first
     # headless programs; unsupported instructions stop deterministically.
     class Cpu
+      LONG_REP_INTERRUPT_RETURN_CYCLE_THRESHOLD = 256_u32
+
       property registers : Registers
       property flags : Flags
       property halted : Bool
@@ -89,6 +92,9 @@ module Swanium
         @segment_override = nil
         @repeat_prefix = nil
         @interrupt_inhibit = 0_u8
+        @trap_inhibit = 0_u8
+        @instruction_start_ip = 0_u16
+        @interrupt_return_override_ip = nil
       end
 
       def reset(code_segment : UInt16, instruction_pointer : UInt16) : Nil
@@ -103,6 +109,9 @@ module Swanium
         @segment_override = nil
         @repeat_prefix = nil
         @interrupt_inhibit = 0_u8
+        @trap_inhibit = 0_u8
+        @instruction_start_ip = instruction_pointer
+        @interrupt_return_override_ip = nil
       end
 
       def fetch_u8(bus : MemoryBus) : UInt8
@@ -123,6 +132,17 @@ module Swanium
         end
       end
 
+      # POPF/IRET enabling TF suppress INT 1 at the immediately following
+      # boundary, matching the V30's corresponding IF-delay behaviour.
+      def trap_interrupt_allowed? : Bool
+        if @trap_inhibit > 0_u8
+          @trap_inhibit -= 1_u8
+          false
+        else
+          true
+        end
+      end
+
       def fetch_u16(bus : MemoryBus) : UInt16
         low = fetch_u8(bus).to_u16
         high = fetch_u8(bus).to_u16
@@ -134,6 +154,8 @@ module Swanium
 
         code_segment = @registers.cs
         instruction_pointer = @registers.ip
+        @instruction_start_ip = instruction_pointer
+        @interrupt_return_override_ip = nil
         opcode = fetch_u8(bus)
         cycles = execute(opcode, bus) + bus.consume_wait_cycles
         @last_trace = InstructionTrace.new(code_segment, instruction_pointer, opcode, cycles)
@@ -143,7 +165,7 @@ module Swanium
       end
 
       def snapshot : CpuSnapshot
-        CpuSnapshot.new(@registers, @flags, @halted, @interrupt_inhibit)
+        CpuSnapshot.new(@registers, @flags, @halted, @interrupt_inhibit, @trap_inhibit)
       end
 
       def restore(snapshot : CpuSnapshot) : Nil
@@ -155,15 +177,25 @@ module Swanium
         @segment_override = nil
         @repeat_prefix = nil
         @interrupt_inhibit = snapshot.interrupt_inhibit
+        @trap_inhibit = snapshot.trap_inhibit
+        @instruction_start_ip = @registers.ip
+        @interrupt_return_override_ip = nil
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.
       # Masking is owned by InterruptController; this method deliberately also
       # serves software interrupts and exceptions.
       def service_interrupt(bus : MemoryBus, vector : UInt8) : UInt32
+        service_interrupt_at_ip(bus, vector, @registers.ip)
+      end
+
+      # Long REP strings are interruptible on the V30.  The scanline-framed
+      # driver executes the string atomically, so it supplies this saved IP to
+      # make IRET restart the prefix/opcode with its remaining CX/SI/DI state.
+      def service_interrupt_at_ip(bus : MemoryBus, vector : UInt8, saved_ip : UInt16) : UInt32
         push16(bus, @flags.to_u16)
         push16(bus, @registers.cs)
-        push16(bus, @registers.ip)
+        push16(bus, saved_ip)
         @flags.interrupt = false
         @flags.trap = false
         vector_address = vector.to_u32 << 2
@@ -171,6 +203,12 @@ module Swanium
         @registers.cs = bus.read_u16(vector_address + 2_u32)
         @halted = false
         10_u32
+      end
+
+      def take_interrupt_return_override_ip : UInt16?
+        saved_ip = @interrupt_return_override_ip
+        @interrupt_return_override_ip = nil
+        saved_ip
       end
 
       private def execute(opcode : UInt8, bus : MemoryBus) : UInt32
@@ -193,23 +231,23 @@ module Swanium
                               end
           execute(fetch_u8(bus), bus)
         when 0x06_u8
-          push16(bus, @registers.es); 1_u32
+          push16(bus, @registers.es); 2_u32
         when 0x07_u8
-          @registers.es = pop16(bus); 1_u32
+          @registers.es = pop16(bus); 3_u32
         when 0x0E_u8
-          push16(bus, @registers.cs); 1_u32
+          push16(bus, @registers.cs); 2_u32
         when 0x0F_u8
           1_u32
         when 0x16_u8
-          push16(bus, @registers.ss); 1_u32
+          push16(bus, @registers.ss); 2_u32
         when 0x17_u8
           @registers.ss = pop16(bus)
           @interrupt_inhibit = 1_u8
-          1_u32
+          3_u32
         when 0x1E_u8
-          push16(bus, @registers.ds); 1_u32
+          push16(bus, @registers.ds); 2_u32
         when 0x1F_u8
-          @registers.ds = pop16(bus); 1_u32
+          @registers.ds = pop16(bus); 3_u32
         when 0x27_u8
           execute_daa
         when 0x2F_u8
@@ -255,8 +293,9 @@ module Swanium
         when 0x70_u8..0x7F_u8
           relative = signed_byte(fetch_u8(bus))
           if condition?(opcode)
-            @registers.ip &+= relative
-            5_u32
+            target = @registers.ip &+ relative
+            @registers.ip = target
+            5_u32 + (target.odd? ? 1_u32 : 0_u32)
           else
             1_u32
           end
@@ -337,7 +376,11 @@ module Swanium
           push16(bus, @flags.to_u16)
           2_u32
         when 0x9D_u8
+          old_interrupt = @flags.interrupt
+          old_trap = @flags.trap
           @flags = Flags.from_u16(pop16(bus))
+          @interrupt_inhibit = 1_u8 if !old_interrupt && @flags.interrupt
+          @trap_inhibit = 1_u8 if !old_trap && @flags.trap
           3_u32
         when 0x9E_u8
           @flags = Flags.from_u16((@flags.to_u16 & 0xFF00_u16) | @registers.reg8(4_u8).to_u16)
@@ -428,8 +471,10 @@ module Swanium
           @registers.ip = pop16(bus)
           @registers.cs = pop16(bus)
           old_interrupt = @flags.interrupt
+          old_trap = @flags.trap
           @flags = Flags.from_u16(pop16(bus))
           @interrupt_inhibit = 1_u8 if !old_interrupt && @flags.interrupt
+          @trap_inhibit = 1_u8 if !old_trap && @flags.trap
           10_u32
         when 0xC6_u8
           mod_rm = decode_mod_rm(bus)
@@ -495,19 +540,19 @@ module Swanium
           end
         when 0xE4_u8
           @registers.set_reg8(0_u8, bus.read_io(fetch_u8(bus)))
-          4_u32
+          7_u32
         when 0xE5_u8
           port = fetch_u8(bus)
           @registers.ax = bus.read_io(port).to_u16 | (bus.read_io(port &+ 1_u8).to_u16 << 8)
-          4_u32
+          7_u32
         when 0xE6_u8
           bus.write_io(fetch_u8(bus), @registers.reg8(0_u8))
-          4_u32
+          7_u32
         when 0xE7_u8
           port = fetch_u8(bus)
           bus.write_io(port, @registers.reg8(0_u8))
           bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
-          4_u32
+          7_u32
         when 0xE9_u8
           relative = fetch_u16(bus)
           @registers.ip &+= relative
@@ -524,19 +569,19 @@ module Swanium
           4_u32
         when 0xEC_u8
           @registers.set_reg8(0_u8, bus.read_io(@registers.reg8(2_u8)))
-          4_u32
+          5_u32
         when 0xED_u8
           port = @registers.reg8(2_u8)
           @registers.ax = bus.read_io(port).to_u16 | (bus.read_io(port &+ 1_u8).to_u16 << 8)
-          4_u32
+          5_u32
         when 0xEE_u8
           bus.write_io(@registers.reg8(2_u8), @registers.reg8(0_u8))
-          4_u32
+          5_u32
         when 0xEF_u8
           port = @registers.reg8(2_u8)
           bus.write_io(port, @registers.reg8(0_u8))
           bus.write_io(port &+ 1_u8, @registers.reg8(4_u8))
-          4_u32
+          5_u32
         when 0xF6_u8
           execute_group3_8(bus)
         when 0xF7_u8
@@ -554,27 +599,27 @@ module Swanium
           1_u32
         when 0xF5_u8
           @flags.carry = !@flags.carry
-          1_u32
+          4_u32
         when 0xF8_u8
           @flags.carry = false
-          1_u32
+          4_u32
         when 0xF9_u8
           @flags.carry = true
-          1_u32
+          4_u32
         when 0xFA_u8
           @flags.interrupt = false
-          1_u32
+          4_u32
         when 0xFB_u8
           was_enabled = @flags.interrupt
           @flags.interrupt = true
           @interrupt_inhibit = 1_u8 unless was_enabled
-          1_u32
+          4_u32
         when 0xFC_u8
           @flags.direction = false
-          1_u32
+          4_u32
         when 0xFD_u8
           @flags.direction = true
-          1_u32
+          4_u32
         else
           @fault_opcode = opcode
           @halted = true
@@ -1443,7 +1488,9 @@ module Swanium
           @registers.di &+= delta
         end
         @registers.cx = 0_u16 if @repeat_prefix
-        5_u32 * iterations.to_u32
+        total_cycles = 5_u32 * iterations.to_u32
+        mark_long_rep_interrupt_return(total_cycles)
+        total_cycles
       end
 
       private def execute_string(bus : MemoryBus, opcode : UInt8) : UInt32
@@ -1463,6 +1510,7 @@ module Swanium
             end
           end
         end
+        mark_long_rep_interrupt_return(total_cycles)
         total_cycles
       end
 
@@ -1548,7 +1596,9 @@ module Swanium
           @registers.di &+= delta
         end
         @registers.cx = 0_u16 if @repeat_prefix
-        3_u32 * iterations.to_u32
+        total_cycles = 3_u32 * iterations.to_u32
+        mark_long_rep_interrupt_return(total_cycles)
+        total_cycles
       end
 
       private def execute_lodsb(bus : MemoryBus) : UInt32
@@ -1562,7 +1612,15 @@ module Swanium
           @registers.si &+= delta
         end
         @registers.cx = 0_u16 if @repeat_prefix
-        3_u32 * iterations.to_u32
+        total_cycles = 3_u32 * iterations.to_u32
+        mark_long_rep_interrupt_return(total_cycles)
+        total_cycles
+      end
+
+      private def mark_long_rep_interrupt_return(total_cycles : UInt32) : Nil
+        if @repeat_prefix && total_cycles >= LONG_REP_INTERRUPT_RETURN_CYCLE_THRESHOLD
+          @interrupt_return_override_ip = @instruction_start_ip
+        end
       end
     end
   end
