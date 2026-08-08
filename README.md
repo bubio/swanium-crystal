@@ -1,6 +1,6 @@
 # Swanium Crystal
 
-WonderSwan 系ハードウェアを Crystal で再実装する、ヘッドレステスト可能なエミュレータプロジェクトです。CPU、Mono / Color / Crystal映像・入力、音声、セーブステート、デバッグ基盤まで実装しています。
+SwanCrystal 固定で WonderSwan 系 ROM を実行する、Crystal 製のヘッドレステスト可能なエミュレータです。Mono / WonderSwan Color ROM は SwanCrystal の後方互換として起動します。実 BIOS は扱わず、CPU、映像・入力、音声、セーブステート、デバッグ基盤を実装しています。対応範囲と Rust 版 Swanium との差分は[機能対応表](docs/feature-compatibility.md)を正とします。
 
 ```sh
 mise run setup

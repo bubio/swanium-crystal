@@ -27,6 +27,18 @@ describe Swanium::Core::CartridgeImage do
     end
   end
 
+  it "runs every cartridge on the fixed SwanCrystal hardware model" do
+    rom = Bytes.new(0x10000, 0_u8)
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+
+    cartridge = Swanium::Core::CartridgeImage.from_bytes(rom)
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(cartridge)
+
+    cartridge.model.should eq(Swanium::Core::WonderSwanModel::Mono)
+    bus.model.should eq(Swanium::Core::WonderSwanModel::Crystal)
+  end
+
   it "persists cartridge EEPROM words through the hardware ports" do
     rom = Bytes.new(0x10000, 0_u8)
     footer = rom.size - 16

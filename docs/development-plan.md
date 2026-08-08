@@ -2,7 +2,7 @@
 
 ## 目的と前提
 
-Crystal で WonderSwan / WonderSwan Color / WonderSwan Crystal を再実装する。最初の対象は macOS 上のエミュレータ本体であり、自作・公開許可済みのテストプログラムと、利用者が合法的に用意した市販ゲームのローカル ROM を実行する。
+Crystal で **SwanCrystal 固定**の WonderSwan 系エミュレータを実装する。Mono / WonderSwan Color ROM はSwanCrystalの後方互換として直接起動する。最初の対象は macOS 上のエミュレータ本体であり、自作・公開許可済みのテストプログラムと、利用者が合法的に用意した市販ゲームのローカル ROM を実行する。
 
 - [ ] 最初の実装・配布・動作保証の対象を **macOS のみ** とする
 - [ ] macOS で市販ゲームを安定して実行できる互換性を最優先し、Linux、Windows、その他のプラットフォームへの実装・CI・配布はその達成後に計画する
@@ -11,12 +11,12 @@ Crystal で WonderSwan / WonderSwan Color / WonderSwan Crystal を再実装す�
 - [ ] コアを UI や OS API に依存させず、ヘッドレスでテスト可能にする
 - [ ] 開発ツールのバージョン固定と実行を mise で統一する
 
-## 移植の互換性契約
+## 参照実装との互換性契約
 
-本プロジェクトは新規エミュレータではなく Rust 版 Swanium の Crystal 移植である。したがって、各機能を「似たもの」として再実装するのではなく、元実装が受け入れている検証結果を移植版でも再現する。
+本プロジェクトは Rust 版 Swanium を参照実装とする Crystal 製品であり、エミュレーション機能は同等にする。実行機種はSwanCrystal固定、実 BIOS・BIOS 選択・BIOS 起動フローだけを明示的に対象外とする。それ以外のCPU、メモリマップ、割り込み、タイマ、DMA、PPU、APU、カートリッジ、RTC、保存データでは、各機能を「似たもの」として再実装するのではなく、元実装が受け入れている検証結果を移植版でも再現する。境界と個別の状態は[機能対応表](feature-compatibility.md)を正とする。
 
-- [ ] 元実装の `crates/core` を挙動の基準とし、CPU、メモリマップ、割り込み、タイマ、DMA、PPU、APU、カートリッジ、RTC、保存データの仕様を対応表にする
-- [ ] Rust 版のユニットテストおよび統合テストと同等のケースを Crystal の `spec/` に移す
+- [x] 元実装の `crates/core` を挙動の基準とし、対象機能と意図的な差分を[対応表](feature-compatibility.md)に記録する
+- [ ] 実 BIOS と機種選択を除き、Rust 版のユニットテストおよび統合テストと同等のケースを Crystal の `spec/` に移す
 - [ ] **WSCPUTest v0.7.1、ws-test-suite の採用済みケース、WSTimingTest v0.4.0（pages 0–28）、WSHWTest の `Test All` を全て通す**
 - [ ] 公開テスト ROM はリポジトリに同梱せず、環境変数で与えたローカルパスだけをテストハーネスが読む
 - [ ] タイルマップ、フレームバッファ、固定メモリ、終了条件を ROM ごとにソース確認して明文化し、推測による判定を行わない

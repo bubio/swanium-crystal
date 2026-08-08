@@ -83,7 +83,11 @@ module Swanium
 
       def self.from_cartridge(cartridge : CartridgeImage) : WonderSwanBus
         header = cartridge.header
-        new(cartridge.rom, save_ram_size: header.save_medium.size, model: cartridge.model,
+        # This product intentionally emulates SwanCrystal for every cartridge.
+        # The footer's color-required bit describes the minimum console, not
+        # the selected host hardware; Mono and Color cartridges run through
+        # SwanCrystal's backwards-compatible hardware path.
+        new(cartridge.rom, save_ram_size: header.save_medium.size, model: WonderSwanModel::Crystal,
           cartridge_header: header, save_ram_mapped: header.save_medium.sram?)
       end
 
