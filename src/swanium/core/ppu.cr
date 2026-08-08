@@ -81,10 +81,18 @@ module Swanium
       end
 
       def load_state(io : IO) : Nil
-        @current_line = read_byte(io)
-        @sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
-        @next_sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
-        @sprite_latch_valid = read_byte(io) != 0_u8
+        current_line = read_byte(io)
+        sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
+        next_sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
+        sprite_latch_valid = read_byte(io)
+        unless current_line < SCREEN_HEIGHT && sprite_count <= 128 && next_sprite_count <= 128 && sprite_latch_valid <= 1_u8
+          raise ArgumentError.new("invalid PPU state")
+        end
+
+        @current_line = current_line
+        @sprite_count = sprite_count
+        @next_sprite_count = next_sprite_count
+        @sprite_latch_valid = sprite_latch_valid == 1_u8
         @rgb444.map! { io.read_bytes(UInt16, IO::ByteFormat::LittleEndian) }
         @sprites = read_sprites(io)
         @next_sprites = read_sprites(io)

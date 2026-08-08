@@ -29,8 +29,7 @@ module Swanium
 
       def self.save(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
         destination = path(game_id, slot)
-        Dir.mkdir_p(destination.parent)
-        File.write(destination, Core::SaveState.dump(machine, bus))
+        write_atomically(destination, Core::SaveState.dump(machine, bus))
         destination
       end
 
@@ -52,9 +51,19 @@ module Swanium
       def self.save_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Path?
         return nil if bus.save_ram.empty?
         destination = cartridge_save_path(game_id)
-        Dir.mkdir_p(destination.parent)
-        File.write(destination, bus.save_ram)
+        write_atomically(destination, bus.save_ram)
         destination
+      end
+
+      private def self.write_atomically(destination : Path, contents : Bytes) : Nil
+        Dir.mkdir_p(destination.parent)
+        temporary = destination.parent / ".#{destination.basename}.#{Process.pid}.tmp"
+        begin
+          File.write(temporary, contents)
+          File.rename(temporary, destination)
+        ensure
+          File.delete(temporary) if File.exists?(temporary)
+        end
       end
 
       private def self.safe_name(value : String) : String

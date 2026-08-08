@@ -44,4 +44,21 @@ describe Swanium::Core::SaveState do
       Swanium::Core::SaveState.load(state, machine, bus)
     end
   end
+
+  it "leaves the running machine unchanged when a state is truncated after partial restore" do
+    machine = Swanium::Core::Machine.new
+    bus = Swanium::Core::WonderSwanBus.new
+    machine.cpu.registers.ax = 0x1234_u16
+    candidate = Swanium::Core::SaveState.dump(machine, bus)
+    truncated = candidate[0, candidate.size - 1]
+
+    machine.cpu.registers.ax = 0xBEEF_u16
+    before = Swanium::Core::SaveState.dump(machine, bus)
+
+    expect_raises(Swanium::Core::SaveStateError, "truncated save state") do
+      Swanium::Core::SaveState.load(truncated, machine, bus)
+    end
+
+    Swanium::Core::SaveState.dump(machine, bus).should eq(before)
+  end
 end

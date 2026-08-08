@@ -41,6 +41,20 @@ module Swanium
       end
 
       def self.load(data : Bytes, machine : Machine, bus : WonderSwanBus) : Nil
+        # Device state is mutable and some device payloads appear near the end
+        # of the stream. Keep a known-good image so a truncated or malformed
+        # payload cannot leave the running machine only partly restored.
+        previous_state = dump(machine, bus)
+        load_unchecked(data, machine, bus)
+      rescue ex : IO::EOFError
+        load_unchecked(previous_state.not_nil!, machine, bus)
+        raise SaveStateError.new("truncated save state", cause: ex)
+      rescue ex : Exception
+        load_unchecked(previous_state.not_nil!, machine, bus)
+        raise ex
+      end
+
+      private def self.load_unchecked(data : Bytes, machine : Machine, bus : WonderSwanBus) : Nil
         io = IO::Memory.new(data)
         magic = Bytes.new(MAGIC.size)
         io.read_fully(magic)
@@ -53,6 +67,9 @@ module Swanium
         cycles = io.read_bytes(UInt64, IO::ByteFormat::LittleEndian)
         scanline = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
         scanline_cycles = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
+        unless scanline < Machine::SCANLINES_PER_FRAME && scanline_cycles < Machine::CYCLES_PER_SCANLINE
+          raise SaveStateError.new("save state has invalid display timing")
+        end
         model = read_byte(io)
         raise SaveStateError.new("save state is for a different hardware model") unless model == bus.model.value.to_u8
         linear_offset = read_byte(io)
@@ -76,8 +93,7 @@ module Swanium
         bus.load_sdma_state(io)
         machine.ppu.load_state(io)
         machine.apu.load_state(io)
-      rescue ex : IO::EOFError
-        raise SaveStateError.new("truncated save state", cause: ex)
+        raise SaveStateError.new("save state has trailing data") if io.read_byte
       end
 
       private def self.write_cpu(io : IO, cpu : Cpu) : Nil
