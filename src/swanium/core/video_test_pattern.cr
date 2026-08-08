@@ -77,7 +77,9 @@ module Swanium
         bus.write_u8(0x2003_u32, 108_u8)
       end
 
-      def self.render(ppu : Ppu, bus : WonderSwanBus, keys : UInt16 = 0_u16) : Bytes
+      # Applies one complete input snapshot to the fixture's scroll registers.
+      # Frame scheduling and rendering remain the machine's responsibility.
+      def self.apply_input(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
         bus.set_keys(keys)
         horizontal = 0
         horizontal -= 2 if (keys & WonderSwanKey::X3) != 0
@@ -89,13 +91,6 @@ module Swanium
         # 254 (-2), not a checked signed-to-UInt8 conversion.
         bus.write_io(0x10_u8, (horizontal & 0xFF).to_u8)
         bus.write_io(0x11_u8, (vertical & 0xFF).to_u8)
-        bus.latch_sprites(ppu)
-        line = 0
-        while line < Ppu::SCREEN_HEIGHT
-          bus.render_scanline(ppu, line.to_u8)
-          line += 1
-        end
-        ppu.framebuffer_rgba
       end
     end
   end

@@ -161,8 +161,8 @@ module Swanium
           debugger = Frontend::Debugger.new
           Core::VideoTestPattern.configure(bus)
           configure_audio_test(bus)
-          bus.write_u8(0x1000_u32, 0x90_u8) # NOP stream for single-step debugging
-          machine.cpu.reset(0_u16, 0x1000_u16)
+          0x10000.times { |address| bus.write_u8(address.to_u32, 0x90_u8) }
+          machine.cpu.reset(0_u16, 0_u16)
           event = uninitialized LibSDL::Event
           running = true
           frequency = LibSDL.get_performance_frequency
@@ -185,12 +185,16 @@ module Swanium
             end
             keys, escape = input_state(controller)
             running = false if escape
-            debugger.run_instruction?(machine, bus) if debugger.paused
-            rgba = Core::VideoTestPattern.render(machine.ppu, bus, keys)
+            if debugger.paused
+              debugger.run_instruction?(machine, bus)
+            else
+              Core::VideoTestPattern.apply_input(bus, keys)
+              machine.run_wonder_swan_frame(bus, keys)
+            end
+            rgba = machine.framebuffer_rgba
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 256_u32 && !debugger.paused
             unless debugger.paused
-              bus.tick_sound(Core::Machine::CYCLES_PER_FRAME.to_u32, machine.apu)
               queue_audio(audio_device, machine.apu.drain_samples)
             end
             latency_ms = queued_audio * 1000_u32 // (Core::Apu::OUTPUT_SAMPLE_RATE * 4_u32)

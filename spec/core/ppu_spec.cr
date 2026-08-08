@@ -3,6 +3,14 @@ require "../../src/swanium/core/video_test_pattern"
 require "base64"
 require "compress/zlib"
 
+private def render_test_pattern(ppu : Swanium::Core::Ppu, bus : Swanium::Core::WonderSwanBus,
+                                keys : UInt16 = 0_u16) : Bytes
+  Swanium::Core::VideoTestPattern.apply_input(bus, keys)
+  bus.latch_sprites(ppu)
+  Swanium::Core::Ppu::SCREEN_HEIGHT.times { |line| bus.render_scanline(ppu, line.to_u8) }
+  ppu.framebuffer_rgba
+end
+
 describe Swanium::Core::Ppu do
   it "renders mono 2bpp tiles through the shade pool" do
     bus = Swanium::Core::WonderSwanBus.new
@@ -93,7 +101,7 @@ describe Swanium::Core::Ppu do
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
     ppu = Swanium::Core::Ppu.new
     Swanium::Core::VideoTestPattern.configure(bus)
-    actual = Swanium::Core::VideoTestPattern.render(ppu, bus)
+    actual = render_test_pattern(ppu, bus)
 
     encoded = File.read(File.join(__DIR__, "..", "fixtures", "video_test_pattern.rgba.zlib.base64")).strip
     compressed = Base64.decode(encoded)
@@ -114,8 +122,8 @@ describe Swanium::Core::Ppu do
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
     ppu = Swanium::Core::Ppu.new
     Swanium::Core::VideoTestPattern.configure(bus)
-    idle = Swanium::Core::VideoTestPattern.render(ppu, bus).dup
-    moved = Swanium::Core::VideoTestPattern.render(ppu, bus, Swanium::Core::WonderSwanKey::X1)
+    idle = render_test_pattern(ppu, bus).dup
+    moved = render_test_pattern(ppu, bus, Swanium::Core::WonderSwanKey::X1)
 
     moved.should_not eq(idle)
     bus.keys.should eq(Swanium::Core::WonderSwanKey::X1)
@@ -134,7 +142,7 @@ describe Swanium::Core::Ppu do
       ppu = Swanium::Core::Ppu.new
       Swanium::Core::VideoTestPattern.configure(bus)
 
-      Swanium::Core::VideoTestPattern.render(ppu, bus, key)
+      render_test_pattern(ppu, bus, key)
 
       bus.read_io(0x10_u8).should eq(expected_x)
       bus.read_io(0x11_u8).should eq(expected_y)
