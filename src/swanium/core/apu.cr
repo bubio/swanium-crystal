@@ -1,6 +1,7 @@
 require "./wonder_swan_wave_generator"
 require "./pcm_sample_buffer"
 require "./wonder_swan_noise_generator"
+require "./wonder_swan_voice_channel"
 
 module Swanium
   module Core
@@ -19,8 +20,7 @@ module Swanium
         @sweep_step = 0_u8
         @fast_sweep_primed = false
         @sample_accumulator = 0_u32
-        @voice_previous = 0_i32
-        @voice_level = 0_i32
+        @voice = WonderSwanVoiceChannel.new
         @pcm = PcmSampleBuffer.new
       end
 
@@ -31,8 +31,7 @@ module Swanium
         @sweep_step = 0_u8
         @fast_sweep_primed = false
         @sample_accumulator = 0_u32
-        @voice_previous = 0_i32
-        @voice_level = 0_i32
+        @voice.reset
         @pcm.reset
       end
 
@@ -42,9 +41,7 @@ module Swanium
       # write time (rather than sampling the port once per audio frame) removes
       # the characteristic harsh multiplex buzz.
       def write_voice(sample : UInt8) : Nil
-        current = sample.to_i32 - 0x80
-        @voice_level = (current + @voice_previous) // 2
-        @voice_previous = current
+        @voice.write(sample)
       end
 
       # CPU-visible digital mixer registers 0x96--0x9B are derived from the
@@ -126,8 +123,7 @@ module Swanium
         io.write_byte(@sweep_step)
         io.write_byte(@fast_sweep_primed ? 1_u8 : 0_u8)
         io.write_bytes(@sample_accumulator, IO::ByteFormat::LittleEndian)
-        io.write_bytes(@voice_previous, IO::ByteFormat::LittleEndian)
-        io.write_bytes(@voice_level, IO::ByteFormat::LittleEndian)
+        @voice.save_state(io)
         @pcm.save_state(io)
       end
 
@@ -138,8 +134,7 @@ module Swanium
         @sweep_step = read_byte(io)
         @fast_sweep_primed = read_byte(io) != 0_u8
         @sample_accumulator = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
-        @voice_previous = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
-        @voice_level = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
+        @voice.load_state(io)
         @pcm.load_state(io)
       end
 
@@ -160,8 +155,7 @@ module Swanium
         sample_count = total // CYCLES_PER_SAMPLE
         @sample_accumulator = total % CYCLES_PER_SAMPLE
         if sample_count > 0_u32
-          @voice_previous = 0_i32
-          @voice_level = 0_i32
+          @voice.reset
           @pcm.append_silence(sample_count)
         end
         0x96_u8.upto(0x9B_u8) { |port| ports[port] = 0_u8 }
@@ -240,15 +234,9 @@ module Swanium
           left += sample.to_i32 * (volume >> 4).to_i32 * MIX_SCALE
           right += sample.to_i32 * (volume & 0x0F_u8).to_i32 * MIX_SCALE
         end
-        if (control & 0x20_u8) != 0_u8
-          voice = @voice_level * MIX_SCALE * 2
-          volume = ports[0x94]
-          left += (volume & 0x04_u8) != 0_u8 ? voice : (volume & 0x08_u8) != 0_u8 ? voice >> 1 : 0
-          right += (volume & 0x01_u8) != 0_u8 ? voice : (volume & 0x02_u8) != 0_u8 ? voice >> 1 : 0
-        else
-          @voice_previous = 0_i32
-          @voice_level = 0_i32
-        end
+        voice_left, voice_right = @voice.mix(ports, MIX_SCALE)
+        left += voice_left
+        right += voice_right
         if color_hardware && (ports[0x6A] & 0x80_u8) != 0_u8
           hyper_left, hyper_right = hypervoice(ports)
           left += hyper_left
