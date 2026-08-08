@@ -159,13 +159,13 @@ module Swanium
         unless @model.color? && sdma_enabled?
           @sdma.running = false
           @sdma.clock = 0_u32
-          apu.tick(cycles, @work_ram, @ports, color_rendering_enabled?)
+          apu.tick(cycles, @work_ram, @ports, @model.color?, color_rendering_enabled?)
           return
         end
 
         cycles.times do
           tick_sdma_cycle(apu)
-          apu.tick(1_u32, @work_ram, @ports, color_rendering_enabled?)
+          apu.tick(1_u32, @work_ram, @ports, @model.color?, color_rendering_enabled?)
         end
       end
 

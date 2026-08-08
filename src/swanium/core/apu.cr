@@ -102,7 +102,8 @@ module Swanium
         @samples.clear
       end
 
-      def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false) : Nil
+      def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false,
+               color_rendering_enabled : Bool = color_hardware) : Nil
         cycles.times do
           step_sweep(ports)
           step_noise(ports, color_hardware)
@@ -110,7 +111,7 @@ module Swanium
           @sample_accumulator += 1_u32
           if @sample_accumulator == CYCLES_PER_SAMPLE
             @sample_accumulator = 0_u32
-            mix_sample(ports, color_hardware)
+            mix_sample(ports, color_rendering_enabled)
           end
         end
         publish_output_ports(ports)

@@ -117,18 +117,25 @@ module Swanium
         color_mode = color_hardware && (ports[0x60] & 0x80) != 0
         display = ports[0x00]
         row = y * SCREEN_WIDTH
+        map_mask = color_mode ? 0x0F_u8 : 0x07_u8
+        scr1_scroll_x = ports[0x10]
+        scr1_bg_y = (line.to_i + ports[0x11].to_i) & 0xFF
+        scr1_map_base = (ports[0x07] & 0x0F_u8 & map_mask).to_i << 11
+        scr2_scroll_x = ports[0x12]
+        scr2_bg_y = (line.to_i + ports[0x13].to_i) & 0xFF
+        scr2_map_base = ((ports[0x07] >> 4) & map_mask).to_i << 11
         x = 0
         while x < SCREEN_WIDTH
           color = backdrop(wram, ports, color_mode)
 
           if (display & 0x01) != 0
-            pixel, palette = background_sample(wram, ports, false, x, line, color_mode)
+            pixel, palette = background_sample(wram, ports, scr1_scroll_x, scr1_bg_y, scr1_map_base, x, color_mode)
             color = resolve(wram, ports, palette, pixel, color_mode) unless transparent?(palette, pixel, color_mode)
           end
 
           scr2_color = nil.as(UInt16?)
           if (display & 0x02) != 0 && scr2_visible?(ports, display, x, line)
-            pixel, palette = background_sample(wram, ports, true, x, line, color_mode)
+            pixel, palette = background_sample(wram, ports, scr2_scroll_x, scr2_bg_y, scr2_map_base, x, color_mode)
             scr2_color = resolve(wram, ports, palette, pixel, color_mode) unless transparent?(palette, pixel, color_mode)
           end
 
@@ -149,14 +156,10 @@ module Swanium
         @current_line = line
       end
 
-      private def background_sample(wram : Bytes, ports : Bytes, scr2 : Bool, x : Int32,
-                                    line : UInt8, color_mode : Bool) : Tuple(UInt8, UInt8)
-        scroll_x = ports[scr2 ? 0x12 : 0x10]
-        scroll_y = ports[scr2 ? 0x13 : 0x11]
+      private def background_sample(wram : Bytes, ports : Bytes, scroll_x : UInt8,
+                                    bg_y : Int32, map_base : Int32, x : Int32,
+                                    color_mode : Bool) : Tuple(UInt8, UInt8)
         bg_x = (x + scroll_x.to_i) & 0xFF
-        bg_y = (line.to_i + scroll_y.to_i) & 0xFF
-        map_nibble = scr2 ? (ports[0x07] >> 4) : (ports[0x07] & 0x0F)
-        map_base = (map_nibble & (color_mode ? 0x0F : 0x07)).to_i << 11
         address = map_base + (((bg_y >> 3) * 32 + (bg_x >> 3)) * 2)
         word = wram[address].to_u16 | (wram[address + 1].to_u16 << 8)
         tile = word & 0x01FF

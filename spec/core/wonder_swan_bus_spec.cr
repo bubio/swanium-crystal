@@ -226,6 +226,17 @@ describe Swanium::Core::WonderSwanBus do
     apu.samples[-2].should_not eq(0_i16)
   end
 
+  it "clocks the Crystal noise LFSR while Color rendering is disabled" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    apu = Swanium::Core::Apu.new
+    bus.write_io(0x8E_u8, 0x10_u8)
+    bus.write_io(0x90_u8, 0x0F_u8)
+
+    bus.tick_sound(1_u32, apu)
+
+    bus.read_io(0x92_u8).should_not eq(0_u8)
+  end
+
   it "blocks GDMA from slow ROM only while the ROM-wait control bit is set" do
     rom = Bytes.new(0x10000, 0_u8)
     rom[0] = 0x5A_u8
