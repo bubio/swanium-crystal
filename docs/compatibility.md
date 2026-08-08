@@ -26,3 +26,16 @@
 ## ハードウェア機能
 
 機能単位の対応状況は、市販ゲームの検証結果と公開テスト ROM の結果に基づいて追記する。
+
+## 公開テスト ROM（ローカル検証）
+
+2026-08-08に macOS で、外部に保持した公開テスト ROM を直接起動して確認した。ROM本体やハッシュはリポジトリへ含めない。`WSCpuTest v0.7.1` は専用ハーネスで `Test All` の `Ok!` とCPU停止まで確認し、その他は未対応CPU命令・異常停止なしで指定フレーム数を完走した。
+
+| テスト | 実行結果 | 対応機能 |
+| --- | --- | --- |
+| WSCpuTest v0.7.1 | 56フレームで `Ok!`、停止 | V30命令・フラグ・割込み |
+| ws-test-suite: prefixes / 80186 quirks / interrupt timing / interrupts | 各600フレーム完走 | CPU prefix、V30拡張、割込み境界 |
+| ws-test-suite: GDMA timing / sound DMA / alignment access | 各600フレーム完走 | GDMA、SDMA、DMAアラインメント |
+| ws-test-suite: sprite scanline limit / tile extended range | 各600フレーム完走 | PPUスプライト上限、Colorタイル範囲 |
+| ws-test-suite: cartridge EEPROM / sound quirks / RTC mapper | 各600フレーム完走 | EEPROM、APU、RTC・mapper |
+| WSHWTest / WSTimingTest | 各1800フレーム完走 | ハードウェアI/O・タイミング回帰の起動確認 |
