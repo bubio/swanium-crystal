@@ -1,3 +1,5 @@
+require "./wonder_swan_wave_generator"
+
 module Swanium
   module Core
     # Deterministic WonderSwan sound unit. It produces interleaved signed
@@ -8,17 +10,8 @@ module Swanium
       CYCLES_PER_SAMPLE  =       128_u32
       MIX_SCALE          =        32_i32
 
-      private struct WaveChannel
-        property counter : UInt16
-        property index : UInt8
-        property sample : UInt8
-
-        def initialize(@counter = 0_u16, @index = 0_u8, @sample = 0_u8)
-        end
-      end
-
       def initialize
-        @channels = StaticArray(WaveChannel, 4).new { WaveChannel.new }
+        @waves = WonderSwanWaveGenerator.new
         @lfsr = 0_u16
         @noise_counter = 0_u16
         @noise_output = 0_u8
@@ -32,7 +25,7 @@ module Swanium
       end
 
       def reset : Nil
-        @channels = StaticArray(WaveChannel, 4).new { WaveChannel.new }
+        @waves.reset
         @lfsr = 0_u16
         @noise_counter = 0_u16
         @noise_output = 0_u8
@@ -68,7 +61,7 @@ module Swanium
           next if (control & (1_u8 << index)) == 0_u8
           next if index == 1 && (control & 0x20_u8) != 0_u8
 
-          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @channels[index].sample
+          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @waves.sample(index)
           volume = ports[0x88 + index]
           left &+= sample.to_u16 * (volume >> 4).to_u16
           right &+= sample.to_u16 * (volume & 0x0F_u8).to_u16
@@ -125,7 +118,7 @@ module Swanium
         cycles.times do
           step_sweep(ports)
           step_noise(ports, color_hardware)
-          step_waves(wram, ports)
+          @waves.step(wram, ports)
           @sample_accumulator += 1_u32
           if @sample_accumulator == CYCLES_PER_SAMPLE
             @sample_accumulator = 0_u32
@@ -136,11 +129,7 @@ module Swanium
       end
 
       def save_state(io : IO) : Nil
-        @channels.each do |channel|
-          io.write_bytes(channel.counter, IO::ByteFormat::LittleEndian)
-          io.write_byte(channel.index)
-          io.write_byte(channel.sample)
-        end
+        @waves.save_state(io)
         io.write_bytes(@lfsr, IO::ByteFormat::LittleEndian)
         io.write_bytes(@noise_counter, IO::ByteFormat::LittleEndian)
         io.write_byte(@noise_output)
@@ -155,12 +144,7 @@ module Swanium
       end
 
       def load_state(io : IO) : Nil
-        @channels = StaticArray(WaveChannel, 4).new do
-          WaveChannel.new(
-            io.read_bytes(UInt16, IO::ByteFormat::LittleEndian),
-            read_byte(io), read_byte(io)
-          )
-        end
+        @waves.load_state(io)
         @lfsr = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
         @noise_counter = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
         @noise_output = read_byte(io)
@@ -174,25 +158,6 @@ module Swanium
         raise ArgumentError.new("invalid buffered PCM length") if sample_count > 1_000_000_u32
         @samples = Array(Int16).new(sample_count.to_i) do
           io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
-        end
-      end
-
-      private def step_waves(wram : Bytes, ports : Bytes) : Nil
-        control = ports[0x90]
-        wave_base = ports[0x8F].to_i << 6
-        4.times do |index|
-          next if (control & (1_u8 << index)) == 0
-          channel = @channels[index]
-          channel.counter &-= 1_u16 if channel.counter > 0_u16
-          if channel.counter == 0_u16
-            pitch = read_pitch(ports, index)
-            channel.counter = 2048_u16 - pitch
-            channel.index = (channel.index &+ 1_u8) & 0x1F_u8
-            address = (wave_base + index * 16 + channel.index.to_i // 2) & 0xFFFF
-            byte = wram[address]
-            channel.sample = (channel.index & 1_u8) == 0_u8 ? byte & 0x0F_u8 : byte >> 4
-          end
-          @channels[index] = channel
         end
       end
 
@@ -237,7 +202,7 @@ module Swanium
         while remaining > 0_u32
           until_sample = CYCLES_PER_SAMPLE - @sample_accumulator
           chunk = remaining < until_sample ? remaining : until_sample
-          advance_waves(chunk, wram, ports)
+          @waves.advance(chunk, wram, ports)
           @sample_accumulator += chunk
           remaining -= chunk
           if @sample_accumulator == CYCLES_PER_SAMPLE
@@ -246,37 +211,6 @@ module Swanium
           end
         end
         publish_output_ports(ports)
-      end
-
-      private def advance_waves(cycles : UInt32, wram : Bytes, ports : Bytes) : Nil
-        control = ports[0x90]
-        wave_base = ports[0x8F].to_i << 6
-        4.times do |index|
-          next if (control & (1_u8 << index)) == 0_u8
-          advance_wave(index, cycles, wram, ports, wave_base)
-        end
-      end
-
-      private def advance_wave(index : Int32, cycles : UInt32, wram : Bytes,
-                               ports : Bytes, wave_base : Int32) : Nil
-        channel = @channels[index]
-        remaining = cycles
-        pitch = read_pitch(ports, index)
-        period = 2048_u16 - pitch
-        while remaining > 0_u32
-          until_next = channel.counter == 0_u16 ? 1_u32 : channel.counter.to_u32
-          if until_next > remaining
-            channel.counter -= remaining.to_u16
-            break
-          end
-          remaining -= until_next
-          channel.counter = period
-          channel.index = (channel.index &+ 1_u8) & 0x1F_u8
-          address = (wave_base + index * 16 + channel.index.to_i // 2) & 0xFFFF
-          byte = wram[address]
-          channel.sample = (channel.index & 1_u8) == 0_u8 ? byte & 0x0F_u8 : byte >> 4
-        end
-        @channels[index] = channel
       end
 
       private def step_noise(ports : Bytes, color_hardware : Bool) : Nil
@@ -353,7 +287,7 @@ module Swanium
         4.times do |index|
           next if (control & (1_u8 << index)) == 0
           next if index == 1 && (control & 0x20_u8) != 0_u8
-          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @channels[index].sample
+          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @waves.sample(index)
           volume = ports[0x88 + index]
           left += sample.to_i32 * (volume >> 4).to_i32 * MIX_SCALE
           right += sample.to_i32 * (volume & 0x0F_u8).to_i32 * MIX_SCALE
