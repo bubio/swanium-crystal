@@ -186,8 +186,8 @@ module Swanium
       end
 
       # Accept an interrupt through the standard V30 real-mode vector table.
-      # Masking is owned by InterruptController; this method deliberately also
-      # serves software interrupts and exceptions.
+      # Device masking is owned by the hardware bus; this method deliberately
+      # also serves software interrupts and exceptions.
       def service_interrupt(bus : MemoryBus, vector : UInt8) : UInt32
         service_interrupt_at_ip(bus, vector, @registers.ip)
       end

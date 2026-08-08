@@ -168,7 +168,7 @@ describe Swanium::Core::Apu do
     128.times { |index| bus.write_u8(index.to_u32, 0x90_u8) }
 
     direct.tick(128_u32, direct_wram, direct_ports)
-    128.times { machine.step_wonder_swan(bus) }
+    128.times { machine.step(bus) }
 
     machine.apu.samples.should eq(direct.samples)
     machine.cycles.should eq(128_u64)

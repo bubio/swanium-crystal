@@ -33,7 +33,7 @@ module Swanium
       def run_instruction?(machine : Core::Machine, bus : Core::WonderSwanBus) : Bool
         return false if @paused && !@step_requested
         @step_requested = false
-        machine.step_wonder_swan(bus)
+        machine.step(bus)
         if trace = machine.cpu.last_trace
           @trace.shift if @trace.size == 8
           @trace << trace

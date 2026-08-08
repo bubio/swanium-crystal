@@ -9,15 +9,13 @@ module Swanium
     # deliberately left to the frontend; the core only accepts and returns bytes.
     module SaveState
       MAGIC   = "SWCST001".to_slice
-      VERSION = 7_u32
+      VERSION = 8_u32
 
       def self.dump(machine : Machine, bus : WonderSwanBus) : Bytes
         io = IO::Memory.new
         io.write(MAGIC)
         io.write_bytes(VERSION, IO::ByteFormat::LittleEndian)
         write_cpu(io, machine.cpu)
-        io.write_byte(machine.interrupts.enabled_mask)
-        io.write_byte(machine.interrupts.pending_mask)
         io.write_bytes(machine.cycles, IO::ByteFormat::LittleEndian)
         io.write_bytes(machine.scanline, IO::ByteFormat::LittleEndian)
         io.write_bytes(machine.scanline_cycles, IO::ByteFormat::LittleEndian)
@@ -62,8 +60,6 @@ module Swanium
         version = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         raise SaveStateError.new("unsupported save-state version #{version}") unless version == VERSION
         cpu = read_cpu(io)
-        interrupt_enabled = read_byte(io)
-        interrupt_pending = read_byte(io)
         cycles = io.read_bytes(UInt64, IO::ByteFormat::LittleEndian)
         scanline = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
         scanline_cycles = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
@@ -85,7 +81,6 @@ module Swanium
         ports = read_bytes(io, bus.ports_size)
 
         machine.cpu.restore(cpu)
-        machine.interrupts.restore(interrupt_enabled, interrupt_pending)
         machine.restore_timing(cycles, scanline, scanline_cycles)
         bus.restore_state(work_ram, save_ram, ports, keys, linear_offset, ram_bank, ram_bank_hi,
           rom_bank0, rom_bank0_hi, rom_bank1, rom_bank1_hi)

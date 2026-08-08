@@ -1,8 +1,6 @@
 require "./cpu"
 require "./apu"
-require "./interrupt_controller"
 require "./ppu"
-require "./timer"
 require "./wonder_swan_bus"
 
 module Swanium
@@ -20,7 +18,6 @@ module Swanium
       getter cycles : UInt64
       getter apu : Apu
       getter cpu : Cpu
-      getter interrupts : InterruptController
       getter ppu : Ppu
       getter scanline : UInt16
 
@@ -28,7 +25,6 @@ module Swanium
         @cycles = 0_u64
         @cpu = Cpu.new
         @apu = Apu.new
-        @interrupts = InterruptController.new
         @ppu = Ppu.new
         @scanline_cycles = 0_u32
         @scanline = 0_u16
@@ -39,40 +35,9 @@ module Swanium
         @next_frame_cycle = CYCLES_PER_FRAME
       end
 
-      def run_cycles(cycles : UInt32) : Nil
-        @cycles += cycles
-      end
-
-      # Run one instruction, advance an optional hardware timer by its V30
-      # cycle cost, and deliver the highest-priority enabled request at the
-      # following instruction boundary.
-      def step(bus : MemoryBus, timer : Timer? = nil, timer_vector : UInt8 = 0_u8) : UInt32
-        cycles = @cpu.step(bus)
-        if timer && timer.advance(cycles) > 0_u32
-          @interrupts.request(InterruptSource::Timer)
-        end
-
-        # The V30 trap flag raises INT 1 after each executed instruction. It
-        # is an architectural exception, so IF does not gate it and it takes
-        # priority over a maskable device request at the same boundary.
-        if @cpu.flags.trap
-          cycles += @cpu.service_interrupt(bus, 1_u8)
-        end
-
-        if @cpu.flags.interrupt && @cpu.maskable_interrupt_allowed?
-          if source = @interrupts.next_pending?
-            @interrupts.clear(source)
-            cycles += @cpu.service_interrupt(bus, timer_vector)
-          end
-        end
-
-        @cycles += cycles
-        cycles
-      end
-
       # Run one CPU instruction and acknowledge the WonderSwan bus's
       # highest-priority enabled request at the following instruction boundary.
-      def step_wonder_swan(bus : WonderSwanBus) : UInt32
+      def step(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
         bus.consume_voice_writes { |sample| @apu.write_voice(sample) }
         # STI and SS loads inhibit exactly one *following instruction
@@ -124,7 +89,7 @@ module Swanium
         bus.set_keys(keys)
         bus.latch_sprites(@ppu)
         while @cycles < @next_frame_cycle
-          step_wonder_swan(bus)
+          step(bus)
         end
         @next_frame_cycle += CYCLES_PER_FRAME
       end

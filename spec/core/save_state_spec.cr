@@ -8,9 +8,7 @@ describe Swanium::Core::SaveState do
     bus.write_u8(0_u32, 0x90_u8)
     machine.cpu.registers.ax = 0x1234_u16
     machine.cpu.reset(0_u16, 0_u16)
-    machine.step_wonder_swan(bus)
-    machine.interrupts.enabled_mask = 0x24_u8
-    machine.interrupts.request(Swanium::Core::InterruptSource::Timer)
+    machine.step(bus)
     bus.tick_sound(128_u32, machine.apu)
     bus.write_u8(0x10000_u32, 0xA5_u8)
     saved = Swanium::Core::SaveState.dump(machine, bus)
@@ -23,8 +21,6 @@ describe Swanium::Core::SaveState do
     machine.cpu.registers.ax.should eq(0_u16)
     machine.cpu.registers.ip.should eq(1_u16)
     machine.cycles.should eq(1_u64)
-    machine.interrupts.enabled_mask.should eq(0x24_u8)
-    machine.interrupts.pending_mask.should eq(0x04_u8)
     machine.apu.samples.should eq([0_i16, 0_i16])
     bus.read_u8(7_u32).should eq(0_u8)
     bus.read_u8(0x10000_u32).should eq(0xA5_u8)
@@ -39,8 +35,8 @@ describe Swanium::Core::SaveState do
     end
 
     state = Swanium::Core::SaveState.dump(machine, bus)
-    state[8] = 6_u8
-    expect_raises(Swanium::Core::SaveStateError, "unsupported save-state version 6") do
+    state[8] = 7_u8
+    expect_raises(Swanium::Core::SaveStateError, "unsupported save-state version 7") do
       Swanium::Core::SaveState.load(state, machine, bus)
     end
   end
