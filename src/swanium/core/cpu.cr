@@ -117,13 +117,6 @@ module Swanium
         @interrupt_return_override_ip = nil
       end
 
-      def fetch_u8(bus : MemoryBus) : UInt8
-        address = Core.linear_address(@registers.cs, @registers.ip)
-        value = bus.read_u8(address)
-        @registers.ip &+= 1_u16
-        value
-      end
-
       # Consumes the one-instruction maskable-interrupt delay following STI
       # and SS loads. Called by the machine only at instruction boundaries.
       def maskable_interrupt_allowed? : Bool
@@ -144,12 +137,6 @@ module Swanium
         else
           true
         end
-      end
-
-      def fetch_u16(bus : MemoryBus) : UInt16
-        low = fetch_u8(bus).to_u16
-        high = fetch_u8(bus).to_u16
-        low | (high << 8)
       end
 
       def step(bus : MemoryBus) : UInt32
@@ -628,6 +615,19 @@ module Swanium
           @halted = true
           1_u32
         end
+      end
+
+      private def fetch_u8(bus : MemoryBus) : UInt8
+        address = Core.linear_address(@registers.cs, @registers.ip)
+        value = bus.read_u8(address)
+        @registers.ip &+= 1_u16
+        value
+      end
+
+      private def fetch_u16(bus : MemoryBus) : UInt16
+        low = fetch_u8(bus).to_u16
+        high = fetch_u8(bus).to_u16
+        low | (high << 8)
       end
 
       private def alu_base?(base : UInt8) : Bool

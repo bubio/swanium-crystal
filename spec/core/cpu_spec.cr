@@ -32,15 +32,17 @@ private def cpu_with(code : Bytes) : Tuple(Swanium::Core::Cpu, Swanium::Core::Fl
 end
 
 describe Swanium::Core::Cpu do
-  it "fetches little-endian instruction data and wraps IP" do
+  it "decodes little-endian instruction data across the IP wrap boundary" do
     memory = Swanium::Core::FlatMemory.new
-    memory.write_u8(0x0F_FFFF_u32, 0x34_u8)
-    memory.write_u8(0_u32, 0x12_u8)
+    memory.write_u8(0x0F_FFFF_u32, 0xB8_u8) # MOV AX, imm16
+    memory.write_u8(0_u32, 0x34_u8)
+    memory.write_u8(1_u32, 0x12_u8)
     cpu = Swanium::Core::Cpu.new
     cpu.reset(0xFFFF_u16, 0x000F_u16)
 
-    cpu.fetch_u16(memory).should eq(0x1234_u16)
-    cpu.registers.ip.should eq(0x0011_u16)
+    cpu.step(memory).should eq(1_u32)
+    cpu.registers.ax.should eq(0x1234_u16)
+    cpu.registers.ip.should eq(0x0012_u16)
   end
 
   it "executes immediate MOV and ALU instructions with V30 flags" do
