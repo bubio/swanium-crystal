@@ -1,5 +1,6 @@
 require "./audio_resampler"
 require "../frontend/video_test_pattern"
+require "../frontend/status_bar"
 
 module Swanium
   module Platform
@@ -40,6 +41,8 @@ module Swanium
       SC_SPACE    = 44
       SC_F1       = 58
       SC_F5       = 62
+      SC_F7       = 64
+      SC_F8       = 65
       SC_F9       = 66
       SC_N        = 17
       SC_1        = 30
@@ -133,16 +136,16 @@ module Swanium
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
             WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3,
+            Core::Ppu::SCREEN_WIDTH * 3, (Core::Ppu::SCREEN_HEIGHT + Frontend::StatusBar::HEIGHT) * 3,
             WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
-          check(LibSDL.render_set_logical_size(renderer, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT))
+          check(LibSDL.render_set_logical_size(renderer, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT + Frontend::StatusBar::HEIGHT))
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
-            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
+            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT + Frontend::StatusBar::HEIGHT)
           raise SdlError.new(error_message) if texture.null?
           controller = first_controller
 
@@ -171,6 +174,11 @@ module Swanium
           next_frame = LibSDL.get_performance_counter
           presented_frames = 0_u32
           audio_underruns = 0_u32
+          volume = 100
+          fps = 60.0
+          fps_anchor = LibSDL.get_performance_counter
+          fps_frames = 0_u32
+          composited_rgba = Bytes.new(Core::Ppu::SCREEN_WIDTH * (Core::Ppu::SCREEN_HEIGHT + Frontend::StatusBar::HEIGHT) * 4, 0_u8)
           while running
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -181,7 +189,7 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device)
+                volume = handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, volume)
               end
             end
             keys, escape = input_state(controller)
@@ -196,11 +204,20 @@ module Swanium
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 256_u32 && !debugger.paused
             unless debugger.paused
-              queue_audio(audio_device, machine.apu.drain_samples)
+              queue_audio(audio_device, machine.apu.drain_samples, nil, volume)
             end
             latency_ms = queued_audio * 1000_u32 // (Core::Apu::OUTPUT_SAMPLE_RATE * 4_u32)
             debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
-            check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
+            fps_frames &+= 1_u32
+            elapsed = LibSDL.get_performance_counter - fps_anchor
+            if elapsed >= frequency // 2_u64
+              fps = fps_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
+              fps_frames = 0_u32
+              fps_anchor = LibSDL.get_performance_counter
+            end
+            Frontend::StatusBar.render(composited_rgba, rgba, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT,
+              "VIDEO DEMO", fps, debugger.paused, volume)
+            check(LibSDL.update_texture(texture, Pointer(Void).null, composited_rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
             check(LibSDL.render_clear(renderer))
             check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
             LibSDL.render_present(renderer)
@@ -251,15 +268,15 @@ module Swanium
           StateStore.default.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            display_width * 3, display_height * 3, WINDOW_SHOWN
+            display_width * 3, (display_height + Frontend::StatusBar::HEIGHT) * 3, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
-          check(LibSDL.render_set_logical_size(renderer, display_width, display_height))
+          check(LibSDL.render_set_logical_size(renderer, display_width, display_height + Frontend::StatusBar::HEIGHT))
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
-            display_width, display_height)
+            display_width, display_height + Frontend::StatusBar::HEIGHT)
           raise SdlError.new(error_message) if texture.null?
           controller = first_controller
 
@@ -289,6 +306,11 @@ module Swanium
           next_frame = LibSDL.get_performance_counter
           presented_frames = 0_u32
           audio_underruns = 0_u32
+          volume = 100
+          fps = 60.0
+          fps_anchor = LibSDL.get_performance_counter
+          fps_frames = 0_u32
+          composited_rgba = Bytes.new(display_width * (display_height + Frontend::StatusBar::HEIGHT) * 4, 0_u8)
           while running
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -299,7 +321,7 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, title)
+                volume = handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, volume, title)
               end
             end
             keys, escape = input_state(controller)
@@ -317,7 +339,7 @@ module Swanium
               frames_run = 0
               while queued_audio < audio_target_bytes(obtained.freq) && frames_run < 4
                 machine.run_wonder_swan_frame(bus, keys)
-                queue_audio(audio_device, machine.apu.drain_samples, resampler)
+                queue_audio(audio_device, machine.apu.drain_samples, resampler, volume)
                 queued_audio = LibSDL.get_queued_audio_size(audio_device)
                 frames_run += 1
               end
@@ -332,7 +354,16 @@ module Swanium
                              else
                                rgba
                              end
-            check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
+            fps_frames &+= 1_u32
+            elapsed = LibSDL.get_performance_counter - fps_anchor
+            if elapsed >= frequency // 2_u64
+              fps = fps_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
+              fps_frames = 0_u32
+              fps_anchor = LibSDL.get_performance_counter
+            end
+            Frontend::StatusBar.render(composited_rgba, displayed_rgba, display_width, display_height,
+              title, fps, debugger.paused, volume)
+            check(LibSDL.update_texture(texture, Pointer(Void).null, composited_rgba.to_unsafe.as(Void*), display_width * 4))
             check(LibSDL.render_clear(renderer))
             check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
             LibSDL.render_present(renderer)
@@ -474,10 +505,11 @@ module Swanium
         bus.write_io(0x91_u8, 0x80_u8)
       end
 
-      private def self.queue_audio(device : UInt32, samples : Array(Int16), resampler : AudioResampler? = nil) : Nil
+      private def self.queue_audio(device : UInt32, samples : Array(Int16), resampler : AudioResampler? = nil, volume : Int32 = 100) : Nil
         return if samples.empty?
         output = resampler ? resampler.process(samples) : samples
         return if output.empty?
+        output = output.map { |sample| (sample.to_i32 * volume.clamp(0, 100) // 100).to_i16 } unless volume == 100
         bytes = (output.size * sizeof(Int16)).to_u32
         maximum = resampler ? audio_max_queue_bytes(resampler.output_rate) : AUDIO_MAX_QUEUE_BYTES
         # Do not clear a live queue: it is audible as a dropout. A temporary
@@ -496,8 +528,8 @@ module Swanium
 
       private def self.handle_debug_key(scancode : Int32, repeat : UInt8, debugger : Frontend::Debugger,
                                         machine : Core::Machine, bus : Core::WonderSwanBus, audio_device : UInt32,
-                                        game_id : String = "demo") : Nil
-        return unless repeat == 0_u8
+                                        volume : Int32, game_id : String = "demo") : Int32
+        return volume unless repeat == 0_u8
         case scancode
         when SC_F1
           debugger.toggle_visible
@@ -517,7 +549,12 @@ module Swanium
         when SC_F9
           StateStore.default.load(machine, bus, game_id)
           LibSDL.clear_queued_audio(audio_device)
+        when SC_F7
+          volume = (volume - 5).clamp(0, 100)
+        when SC_F8
+          volume = (volume + 5).clamp(0, 100)
         end
+        volume
       end
     end
   end

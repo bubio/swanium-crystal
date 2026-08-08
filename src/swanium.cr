@@ -4,6 +4,7 @@ require "./swanium/core/machine"
 require "./swanium/core/save_state"
 require "./swanium/frontend/debugger"
 require "./swanium/frontend/video_test_pattern"
+require "./swanium/frontend/status_bar"
 require "./swanium/platform/sdl"
 require "./swanium/platform/state_store"
 
