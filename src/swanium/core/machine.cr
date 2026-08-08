@@ -68,6 +68,7 @@ module Swanium
         end
         @cycles += cycles
         @apu.tick(cycles, bus.work_ram, bus.ports, bus.model.color?)
+        bus.tick_rtc(cycles)
         advance_wonder_swan_display(bus, cycles)
         cycles
       end

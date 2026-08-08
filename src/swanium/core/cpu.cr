@@ -807,7 +807,10 @@ module Swanium
           cycles(mod_rm.operand, 3_u32, 4_u32)
         when 5_u8
           product = signed8(@registers.reg8(0_u8)) * signed8(read_operand8(bus, mod_rm.operand))
-          @registers.ax = (product & 0xFFFF).to_u16
+          # IMUL writes the low 16 bits as a bit pattern. Converting a negative
+          # Int16 through Crystal's checked numeric conversion raises instead
+          # of preserving the V30's two's-complement result.
+          @registers.ax = product.unsafe_as(UInt16)
           @flags.carry = product < -128 || product > 127
           @flags.overflow = @flags.carry
           cycles(mod_rm.operand, 3_u32, 4_u32)

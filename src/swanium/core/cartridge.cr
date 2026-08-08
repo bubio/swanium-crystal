@@ -40,11 +40,12 @@ module Swanium
       getter save_medium : SaveMedium
       getter vertical : Bool
       getter mapper_2003 : Bool
+      getter rtc : Bool
       getter game_id : UInt8
       getter version : UInt8
 
       def initialize(@color_required : Bool, @save_medium : SaveMedium, @vertical : Bool,
-                     @mapper_2003 : Bool, @game_id : UInt8, @version : UInt8)
+                     @mapper_2003 : Bool, @rtc : Bool, @game_id : UInt8, @version : UInt8)
       end
 
       def self.parse(rom : Bytes) : CartridgeHeader
@@ -57,6 +58,7 @@ module Swanium
           save_medium_from(rom[footer + 11]),
           (rom[footer + 12] & 0x01_u8) != 0_u8,
           rom[footer + 13] == 1_u8,
+          (rom[footer + 12] & 0x04_u8) != 0_u8 && rom[footer + 13] != 0_u8,
           rom[footer + 8],
           rom[footer + 9]
         )

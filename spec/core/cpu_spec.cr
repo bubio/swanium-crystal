@@ -403,6 +403,21 @@ describe Swanium::Core::Cpu do
     memory.read_u16(0x3FFA_u32).should eq(0x0202_u16)
   end
 
+  it "stores a negative 8-bit IMUL product as a 16-bit two's-complement value" do
+    memory = Swanium::Core::FlatMemory.new
+    memory.load(0_u32, Bytes[0xF6, 0xE9]) # IMUL CL
+    cpu = Swanium::Core::Cpu.new
+    cpu.reset(0_u16, 0_u16)
+    cpu.registers.set_reg8(0_u8, 0x80_u8) # AL = -128
+    cpu.registers.set_reg8(1_u8, 0x02_u8) # CL = 2
+
+    cpu.step(memory)
+
+    cpu.registers.ax.should eq(0xFF00_u16)
+    cpu.flags.carry.should be_true
+    cpu.flags.overflow.should be_true
+  end
+
   it "executes V30 stack extensions and immediate IMUL" do
     memory = Swanium::Core::FlatMemory.new
     memory.load(0_u32, Bytes[0x60, 0x61, 0x68, 0x34, 0x12, 0x6A, 0xFF, 0x69, 0xC3, 0x03, 0x00, 0x6B, 0xC3, 0xFF])

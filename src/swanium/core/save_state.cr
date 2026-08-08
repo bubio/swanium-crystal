@@ -9,7 +9,7 @@ module Swanium
     # deliberately left to the frontend; the core only accepts and returns bytes.
     module SaveState
       MAGIC   = "SWCST001".to_slice
-      VERSION = 2_u32
+      VERSION = 3_u32
 
       def self.dump(machine : Machine, bus : WonderSwanBus) : Bytes
         io = IO::Memory.new
@@ -30,6 +30,7 @@ module Swanium
         write_bytes(io, bus.work_ram)
         write_bytes(io, bus.save_ram)
         write_bytes(io, bus.ports)
+        bus.save_rtc_state(io)
         machine.ppu.save_state(io)
         machine.apu.save_state(io)
         io.to_slice.dup
@@ -63,6 +64,7 @@ module Swanium
         machine.interrupts.restore(interrupt_enabled, interrupt_pending)
         machine.restore_timing(cycles, scanline, scanline_cycles)
         bus.restore_state(work_ram, save_ram, ports, keys, linear_offset, ram_bank, rom_bank0, rom_bank1)
+        bus.load_rtc_state(io)
         machine.ppu.load_state(io)
         machine.apu.load_state(io)
       rescue ex : IO::EOFError

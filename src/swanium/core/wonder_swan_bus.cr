@@ -1,5 +1,6 @@
 require "./memory_bus"
 require "./cartridge"
+require "./rtc"
 
 module Swanium
   module Core
@@ -71,6 +72,7 @@ module Swanium
         else
           @eeprom = nil
         end
+        @rtc = @cartridge_header.try(&.rtc) ? Rtc.new : nil
         @ports = Bytes.new(0x100, 0_u8)
         @linear_offset = 0xFF_u8
         @ram_bank = 0xFF_u8
@@ -100,6 +102,30 @@ module Swanium
         writes = @voice_writes
         @voice_writes = [] of UInt8
         writes
+      end
+
+      def has_rtc? : Bool
+        !@rtc.nil?
+      end
+
+      def tick_rtc(cycles : UInt32) : Nil
+        @rtc.try(&.tick(cycles))
+      end
+
+      def set_rtc_datetime(year : UInt8, month : UInt8, day : UInt8, weekday : UInt8,
+                           hour : UInt8, minute : UInt8, second : UInt8) : Nil
+        @rtc.try(&.set_datetime(year, month, day, weekday, hour, minute, second))
+      end
+
+      def save_rtc_state(io : IO) : Nil
+        io.write_byte(has_rtc? ? 1_u8 : 0_u8)
+        @rtc.try(&.save_state(io))
+      end
+
+      def load_rtc_state(io : IO) : Nil
+        present = io.read_byte || raise IO::EOFError.new
+        raise ArgumentError.new("save state RTC presence does not match cartridge") unless (present != 0_u8) == has_rtc?
+        @rtc.try(&.load_state(io))
       end
 
       def read_u8(address : UInt32) : UInt8
@@ -135,6 +161,8 @@ module Swanium
         when 0x20_u8..0x3F_u8                   then @ports[port] & mono_palette_port_mask(port)
         when 0xC4_u8, 0xC5_u8, 0xC6_u8, 0xC7_u8 then @eeprom ? @ports[port] : OPEN_BUS
         when 0xC8_u8                            then @eeprom ? 0x02_u8 : OPEN_BUS
+        when 0xCA_u8                            then @rtc ? @rtc.not_nil!.read_command : Rtc::OPEN_BUS
+        when 0xCB_u8                            then @rtc ? @rtc.not_nil!.read_data : Rtc::OPEN_BUS
         when 0xC0_u8                            then @linear_offset
         when 0xC1_u8                            then @ram_bank
         when 0xC2_u8                            then @rom_bank0
@@ -175,6 +203,10 @@ module Swanium
           @ports[port] = value
         when 0xC8_u8
           eeprom_control(value) if @eeprom
+        when 0xCA_u8
+          @rtc.try(&.write_command(value))
+        when 0xCB_u8
+          @rtc.try(&.write_data(value))
         when 0xC0_u8
           @linear_offset = value & 0x3F_u8
           @ports[port] = @linear_offset

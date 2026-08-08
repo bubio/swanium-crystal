@@ -39,6 +39,69 @@ describe Swanium::Core::CartridgeImage do
     bus.model.should eq(Swanium::Core::WonderSwanModel::Crystal)
   end
 
+  it "detects the conservative RTC footer signal and exposes its protocol" do
+    rom = Bytes.new(0x10000, 0_u8)
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+    rom[footer + 12] = 0x04_u8
+    rom[footer + 13] = 1_u8
+
+    cartridge = Swanium::Core::CartridgeImage.from_bytes(rom)
+    cartridge.header.rtc.should be_true
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(cartridge)
+    bus.has_rtc?.should be_true
+    bus.set_rtc_datetime(26_u8, 7_u8, 3_u8, 5_u8, 12_u8, 34_u8, 56_u8)
+    bus.write_io(0xCA_u8, 0x15_u8)
+    bus.read_io(0xCA_u8).should eq(0x90_u8)
+    bytes = Array(UInt8).new(7) { bus.read_io(0xCB_u8) }
+    bytes.should eq([0x26_u8, 0x07_u8, 0x03_u8, 5_u8, 0x12_u8, 0x34_u8, 0x56_u8])
+  end
+
+  it "does not expose an RTC for a fast-ROM footer alone" do
+    rom = Bytes.new(0x10000, 0_u8)
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+    rom[footer + 12] = 0x04_u8
+
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(Swanium::Core::CartridgeImage.from_bytes(rom))
+    bus.has_rtc?.should be_false
+    bus.read_io(0xCA_u8).should eq(0x90_u8)
+  end
+
+  it "advances the RTC from emulated master-clock cycles" do
+    rom = Bytes.new(0x10000, 0_u8)
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+    rom[footer + 12] = 0x04_u8
+    rom[footer + 13] = 1_u8
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(Swanium::Core::CartridgeImage.from_bytes(rom))
+
+    bus.set_rtc_datetime(26_u8, 7_u8, 3_u8, 5_u8, 12_u8, 0_u8, 59_u8)
+    bus.tick_rtc(Swanium::Core::Rtc::CYCLES_PER_SECOND)
+    bus.write_io(0xCA_u8, 0x15_u8)
+    bytes = Array(UInt8).new(7) { bus.read_io(0xCB_u8) }
+    bytes.last.should eq(0_u8)
+  end
+
+  it "restores RTC time and command state from a save state" do
+    rom = Bytes.new(0x10000, 0_u8)
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+    rom[footer + 12] = 0x04_u8
+    rom[footer + 13] = 1_u8
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(Swanium::Core::CartridgeImage.from_bytes(rom))
+    machine = Swanium::Core::Machine.new
+    bus.set_rtc_datetime(26_u8, 7_u8, 3_u8, 5_u8, 12_u8, 34_u8, 56_u8)
+    bus.write_io(0xCA_u8, 0x15_u8)
+    bus.read_io(0xCB_u8).should eq(0x26_u8)
+    saved = Swanium::Core::SaveState.dump(machine, bus)
+
+    bus.tick_rtc(Swanium::Core::Rtc::CYCLES_PER_SECOND)
+    Swanium::Core::SaveState.load(saved, machine, bus)
+
+    bus.read_io(0xCB_u8).should eq(0x07_u8)
+  end
+
   it "persists cartridge EEPROM words through the hardware ports" do
     rom = Bytes.new(0x10000, 0_u8)
     footer = rom.size - 16
