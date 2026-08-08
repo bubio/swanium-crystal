@@ -104,7 +104,6 @@ module Swanium
         @keys = 0_u16
         @voice_writes = [] of UInt8
         @sdma = SdmaState.new
-        @noise_reset_pending = false
         @ports[0x9E] = 0x03_u8
         @pending_wait_cycles = 0_u32
       end
@@ -155,10 +154,6 @@ module Swanium
       end
 
       def tick_sound(cycles : UInt32, apu : Apu) : Nil
-        if @noise_reset_pending
-          apu.reset_noise_lfsr(@ports)
-          @noise_reset_pending = false
-        end
         unless @model.color? && sdma_enabled?
           @sdma.running = false
           @sdma.clock = 0_u32
@@ -315,12 +310,6 @@ module Swanium
           @ports[port] = value & 0x1F_u8
         when 0x8E_u8
           @ports[port] = value & 0x1F_u8
-          if (@ports[port] & 0x08_u8) != 0_u8
-            @ports[0x8E] &= 0xF7_u8
-            @ports[0x92] = 0_u8
-            @ports[0x93] = 0_u8
-            @noise_reset_pending = true
-          end
         when 0x90_u8
           @ports[port] = value & 0xEF_u8
         when 0x91_u8

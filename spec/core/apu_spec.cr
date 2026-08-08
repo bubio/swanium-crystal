@@ -42,7 +42,7 @@ describe Swanium::Core::Apu do
     ports[0x8E] = 0x18_u8
     ports[0x90] = 0xCC_u8
 
-    apu.tick(8192_u32, wram, ports)
+    apu.tick(8193_u32, wram, ports)
     (ports[0x84].to_u16 | (ports[0x85].to_u16 << 8)).should eq(0x0401_u16)
     (ports[0x92].to_u16 | (ports[0x93].to_u16 << 8)).should_not eq(0_u16)
     ports[0x8E].bit(3).should eq(0)
@@ -58,7 +58,7 @@ describe Swanium::Core::Apu do
     ports[0x8D] = 0_u8
     ports[0x90] = 0x44_u8 # Channel three and sweep enabled.
 
-    apu.tick(8192_u32, wram, ports)
+    apu.tick(8193_u32, wram, ports)
 
     (ports[0x84].to_u16 | (ports[0x85].to_u16 << 8)).should eq(0x03FF_u16)
   end
@@ -74,6 +74,39 @@ describe Swanium::Core::Apu do
 
     ports[0x92].should eq(1_u8)
     ports[0x93].should eq(0_u8)
+  end
+
+  it "matches the Rust sweep threshold, fast test mode, and overflow wrap" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    ports[0x84] = 0_u8
+    ports[0x85] = 1_u8
+    ports[0x8C] = 5_u8
+    ports[0x8D] = 1_u8
+    ports[0x90] = 0x44_u8
+    apu.tick(8192_u32, wram, ports)
+    (ports[0x84].to_u16 | (ports[0x85].to_u16 << 8)).should eq(0x100_u16)
+    apu.tick(1_u32, wram, ports)
+    (ports[0x84].to_u16 | (ports[0x85].to_u16 << 8)).should eq(0x105_u16)
+
+    apu.reset
+    ports.fill(0_u8)
+    ports[0x8C] = 1_u8
+    ports[0x90] = 0x44_u8
+    ports[0x95] = 0x02_u8
+    apu.tick(6_u32, wram, ports)
+    ports[0x84].should eq(5_u8)
+
+    apu.reset
+    ports.fill(0_u8)
+    ports[0x84] = 0xFF_u8
+    ports[0x85] = 0x07_u8
+    ports[0x8C] = 1_u8
+    ports[0x90] = 0x44_u8
+    apu.tick(8193_u32, wram, ports)
+    ports[0x84].should eq(0_u8)
+    ports[0x85].should eq(0_u8)
   end
 
   it "reconstructs multiplexed channel-two PCM from every port write" do
