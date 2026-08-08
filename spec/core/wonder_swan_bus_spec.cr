@@ -52,6 +52,25 @@ describe Swanium::Core::WonderSwanBus do
     bus.read_u8(0x30002_u32).should eq(0xB2_u8)
   end
 
+  it "uses the Bandai 2003 high-byte bank registers only for a 2003 cartridge" do
+    rom = Bytes.new(0x30000, 0_u8)
+    rom[0x10000] = 0xA1_u8
+    footer = rom.size - 16
+    rom[footer] = 0xEA_u8
+    rom[footer + 13] = 1_u8
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(Swanium::Core::CartridgeImage.from_bytes(rom))
+
+    bus.write_io(0xD2_u8, 0_u8)
+    bus.write_io(0xD3_u8, 1_u8)
+    bus.read_io(0xD3_u8).should eq(1_u8)
+    bus.read_u8(0x20000_u32).should eq(0xA1_u8) # 0x0100 bank modulo 3 is bank 1
+
+    rom[footer + 13] = 0_u8
+    mapper_2001 = Swanium::Core::WonderSwanBus.from_cartridge(Swanium::Core::CartridgeImage.from_bytes(rom))
+    mapper_2001.write_io(0xD3_u8, 1_u8)
+    mapper_2001.read_io(0xD3_u8).should eq(0xFF_u8)
+  end
+
   it "uses open bus for absent ROM and save RAM" do
     bus = Swanium::Core::WonderSwanBus.new
     bus.read_u8(0x10000_u32).should eq(0xFF_u8)

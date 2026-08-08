@@ -9,7 +9,7 @@ module Swanium
     # deliberately left to the frontend; the core only accepts and returns bytes.
     module SaveState
       MAGIC   = "SWCST001".to_slice
-      VERSION = 3_u32
+      VERSION = 4_u32
 
       def self.dump(machine : Machine, bus : WonderSwanBus) : Bytes
         io = IO::Memory.new
@@ -24,8 +24,11 @@ module Swanium
         io.write_byte(bus.model.value.to_u8)
         io.write_byte(bus.linear_offset)
         io.write_byte(bus.ram_bank)
+        io.write_byte(bus.ram_bank_hi)
         io.write_byte(bus.rom_bank0)
+        io.write_byte(bus.rom_bank0_hi)
         io.write_byte(bus.rom_bank1)
+        io.write_byte(bus.rom_bank1_hi)
         io.write_bytes(bus.keys, IO::ByteFormat::LittleEndian)
         write_bytes(io, bus.work_ram)
         write_bytes(io, bus.save_ram)
@@ -53,8 +56,11 @@ module Swanium
         raise SaveStateError.new("save state is for a different hardware model") unless model == bus.model.value.to_u8
         linear_offset = read_byte(io)
         ram_bank = read_byte(io)
+        ram_bank_hi = read_byte(io)
         rom_bank0 = read_byte(io)
+        rom_bank0_hi = read_byte(io)
         rom_bank1 = read_byte(io)
+        rom_bank1_hi = read_byte(io)
         keys = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
         work_ram = read_bytes(io, bus.work_ram.size)
         save_ram = read_bytes(io, bus.save_ram.size)
@@ -63,7 +69,8 @@ module Swanium
         machine.cpu.restore(cpu)
         machine.interrupts.restore(interrupt_enabled, interrupt_pending)
         machine.restore_timing(cycles, scanline, scanline_cycles)
-        bus.restore_state(work_ram, save_ram, ports, keys, linear_offset, ram_bank, rom_bank0, rom_bank1)
+        bus.restore_state(work_ram, save_ram, ports, keys, linear_offset, ram_bank, ram_bank_hi,
+          rom_bank0, rom_bank0_hi, rom_bank1, rom_bank1_hi)
         bus.load_rtc_state(io)
         machine.ppu.load_state(io)
         machine.apu.load_state(io)

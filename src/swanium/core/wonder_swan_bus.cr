@@ -57,8 +57,11 @@ module Swanium
       getter keys : UInt16
       getter linear_offset : UInt8
       getter ram_bank : UInt8
+      getter ram_bank_hi : UInt8
       getter rom_bank0 : UInt8
+      getter rom_bank0_hi : UInt8
       getter rom_bank1 : UInt8
+      getter rom_bank1_hi : UInt8
       getter cartridge_header : CartridgeHeader?
 
       def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono,
@@ -76,8 +79,11 @@ module Swanium
         @ports = Bytes.new(0x100, 0_u8)
         @linear_offset = 0xFF_u8
         @ram_bank = 0xFF_u8
+        @ram_bank_hi = 0xFF_u8
         @rom_bank0 = 0xFF_u8
+        @rom_bank0_hi = 0xFF_u8
         @rom_bank1 = 0xFF_u8
+        @rom_bank1_hi = 0xFF_u8
         @keys = 0_u16
         @voice_writes = [] of UInt8
         @pending_wait_cycles = 0_u32
@@ -133,8 +139,8 @@ module Swanium
         case address
         when 0x00000_u32..0x0FFFF_u32 then read_work_ram(address)
         when 0x10000_u32..0x1FFFF_u32 then read_save_ram(address)
-        when 0x20000_u32..0x2FFFF_u32 then read_rom_bank(@rom_bank0, address)
-        when 0x30000_u32..0x3FFFF_u32 then read_rom_bank(@rom_bank1, address)
+        when 0x20000_u32..0x2FFFF_u32 then read_rom_bank(@rom_bank0, @rom_bank0_hi, address)
+        when 0x30000_u32..0x3FFFF_u32 then read_rom_bank(@rom_bank1, @rom_bank1_hi, address)
         else                               read_linear_rom(address)
         end
       end
@@ -167,6 +173,12 @@ module Swanium
         when 0xC1_u8                            then @ram_bank
         when 0xC2_u8                            then @rom_bank0
         when 0xC3_u8                            then @rom_bank1
+        when 0xD0_u8                            then mapper_2003? ? @ram_bank : OPEN_BUS
+        when 0xD1_u8                            then mapper_2003? ? @ram_bank_hi : OPEN_BUS
+        when 0xD2_u8                            then mapper_2003? ? @rom_bank0 : OPEN_BUS
+        when 0xD3_u8                            then mapper_2003? ? @rom_bank0_hi : OPEN_BUS
+        when 0xD4_u8                            then mapper_2003? ? @rom_bank1 : OPEN_BUS
+        when 0xD5_u8                            then mapper_2003? ? @rom_bank1_hi : OPEN_BUS
         when 0xA2_u8, 0xA3_u8                   then @ports[port] & 0x0F_u8
         when 0xA0_u8                            then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
         when 0xB0_u8
@@ -219,6 +231,18 @@ module Swanium
         when 0xC3_u8
           @rom_bank1 = value
           @ports[port] = value
+        when 0xD0_u8
+          @ram_bank = value if mapper_2003?
+        when 0xD1_u8
+          @ram_bank_hi = value if mapper_2003?
+        when 0xD2_u8
+          @rom_bank0 = value if mapper_2003?
+        when 0xD3_u8
+          @rom_bank0_hi = value if mapper_2003?
+        when 0xD4_u8
+          @rom_bank1 = value if mapper_2003?
+        when 0xD5_u8
+          @rom_bank1_hi = value if mapper_2003?
         when 0x89_u8
           @ports[port] = value
           @voice_writes << value if (@ports[0x90] & 0x20_u8) != 0_u8
@@ -307,7 +331,8 @@ module Swanium
       end
 
       def restore_state(work_ram : Bytes, save_ram : Bytes, ports : Bytes, keys : UInt16,
-                        linear_offset : UInt8, ram_bank : UInt8, rom_bank0 : UInt8, rom_bank1 : UInt8) : Nil
+                        linear_offset : UInt8, ram_bank : UInt8, ram_bank_hi : UInt8,
+                        rom_bank0 : UInt8, rom_bank0_hi : UInt8, rom_bank1 : UInt8, rom_bank1_hi : UInt8) : Nil
         raise ArgumentError.new("state RAM size does not match machine") unless work_ram.size == @work_ram.size && save_ram.size == @save_ram.size
         raise ArgumentError.new("state port file has invalid size") unless ports.size == @ports.size
         @work_ram.copy_from(work_ram)
@@ -316,8 +341,11 @@ module Swanium
         @keys = keys
         @linear_offset = linear_offset
         @ram_bank = ram_bank
+        @ram_bank_hi = ram_bank_hi
         @rom_bank0 = rom_bank0
+        @rom_bank0_hi = rom_bank0_hi
         @rom_bank1 = rom_bank1
+        @rom_bank1_hi = rom_bank1_hi
         @pending_wait_cycles = 0_u32
       end
 
@@ -389,17 +417,17 @@ module Swanium
 
       private def read_save_ram(address : UInt32) : UInt8
         return OPEN_BUS if @save_ram.empty? || !@save_ram_mapped
-        @save_ram[bank_index(@ram_bank, address, @save_ram.size)]
+        @save_ram[bank_index(effective_bank(@ram_bank, @ram_bank_hi), address, @save_ram.size)]
       end
 
       private def write_save_ram(address : UInt32, value : UInt8) : Nil
         return if @save_ram.empty? || !@save_ram_mapped
-        @save_ram[bank_index(@ram_bank, address, @save_ram.size)] = value
+        @save_ram[bank_index(effective_bank(@ram_bank, @ram_bank_hi), address, @save_ram.size)] = value
       end
 
-      private def read_rom_bank(bank : UInt8, address : UInt32) : UInt8
+      private def read_rom_bank(bank : UInt8, high : UInt8, address : UInt32) : UInt8
         return OPEN_BUS if @rom.empty?
-        @rom[bank_index(bank, address, @rom.size)]
+        @rom[bank_index(effective_bank(bank, high), address, @rom.size)]
       end
 
       private def read_linear_rom(address : UInt32) : UInt8
@@ -408,8 +436,17 @@ module Swanium
         @rom[index.to_i]
       end
 
-      private def bank_index(bank : UInt8, address : UInt32, size : Int) : Int
+      private def bank_index(bank : UInt16, address : UInt32, size : Int) : Int
         (((bank.to_u64 << 16) | (address & 0xFFFF_u32).to_u64) % size.to_u64).to_i
+      end
+
+      private def mapper_2003? : Bool
+        @cartridge_header.try(&.mapper_2003) || false
+      end
+
+      private def effective_bank(low : UInt8, high : UInt8) : UInt16
+        return low.to_u16 unless mapper_2003?
+        low.to_u16 | (high.to_u16 << 8)
       end
 
       private def eeprom_address_bits(size : Int) : UInt8
