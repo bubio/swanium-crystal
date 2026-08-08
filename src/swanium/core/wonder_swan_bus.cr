@@ -123,10 +123,12 @@ module Swanium
         @save_ram.copy_from(data)
       end
 
-      def consume_voice_writes : Array(UInt8)
-        writes = @voice_writes
-        @voice_writes = [] of UInt8
-        writes
+      # Drains the voice writes collected during the preceding CPU instruction.
+      # This runs at every instruction boundary, so retain the backing storage
+      # instead of replacing it with a newly allocated Array each time.
+      def consume_voice_writes(&) : Nil
+        @voice_writes.each { |sample| yield sample }
+        @voice_writes.clear
       end
 
       def has_rtc? : Bool

@@ -67,7 +67,7 @@ module Swanium
       # highest-priority enabled request at the following instruction boundary.
       def step_wonder_swan(bus : WonderSwanBus) : UInt32
         cycles = @cpu.step(bus)
-        bus.consume_voice_writes.each { |sample| @apu.write_voice(sample) }
+        bus.consume_voice_writes { |sample| @apu.write_voice(sample) }
         # STI and SS loads inhibit exactly one *following instruction
         # boundary*, whether or not an IRQ happens to be pending there.  Do
         # not defer this decrement until an IRQ appears: that would consume

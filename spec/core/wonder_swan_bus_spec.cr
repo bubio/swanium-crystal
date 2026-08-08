@@ -195,6 +195,20 @@ describe Swanium::Core::WonderSwanBus do
     bus.read_io(0x9A_u8).should eq(10_u8)
   end
 
+  it "drains each queued voice write once" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    bus.write_io(0x90_u8, 0x20_u8)
+    bus.write_io(0x89_u8, 0x12_u8)
+    bus.write_io(0x89_u8, 0x34_u8)
+
+    writes = [] of UInt8
+    bus.consume_voice_writes { |sample| writes << sample }
+    writes.should eq([0x12_u8, 0x34_u8])
+
+    bus.consume_voice_writes { |sample| writes << sample }
+    writes.should eq([0x12_u8, 0x34_u8])
+  end
+
   it "gates HyperVoice mixing on the Color video-mode bit" do
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
     apu = Swanium::Core::Apu.new
