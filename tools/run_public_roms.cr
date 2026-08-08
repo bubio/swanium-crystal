@@ -143,19 +143,14 @@ module PublicRoms
         initial = (1..17).map { |row| bus.read_u8(0x1800_u32 + row.to_u32 * 64_u32 + 48_u32) }
         break if initial.all? { |tile| tile == 'o'.ord.to_u8 || tile == 'x'.ord.to_u8 }
       end
-      page.times do
+      if page > 0
+        # `pageCounter` is the test ROM's documented BSS byte at 0x0104.
+        # Seed the preceding page, then make exactly one keypad transition;
+        # this avoids attempting to hold X2 across the long 1,000-iteration
+        # timing program of every intervening page.
+        bus.write_u8(0x0104_u32, (page - 1).to_u8)
         machine.run_wonder_swan_frame(bus, Swanium::Core::WonderSwanKey::X2)
         machine.run_wonder_swan_frame(bus)
-        # A page runs its 1,000-iteration timing loops before returning to
-        # keypad polling.  Wait for the previous marker to be cleared and the
-        # newly selected page to finish before sending the next X2 press.
-        cleared = false
-        180.times do
-          machine.run_wonder_swan_frame(bus)
-          marker = bus.read_u8(0x1800_u32 + 64_u32 + 48_u32)
-          cleared ||= marker != 'o'.ord.to_u8 && marker != 'x'.ord.to_u8
-          break if cleared && (marker == 'o'.ord.to_u8 || marker == 'x'.ord.to_u8)
-        end
       end
       markers = Array(UInt8).new(rows.size, 0_u8)
       180.times do
