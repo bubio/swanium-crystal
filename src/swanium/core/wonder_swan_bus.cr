@@ -30,9 +30,6 @@ module Swanium
       end
 
       getter model : WonderSwanModel
-      getter work_ram : Bytes
-      getter save_ram : Bytes
-      getter ports : Bytes
       getter linear_offset : UInt8
       getter ram_bank : UInt8
       getter ram_bank_hi : UInt8
@@ -82,6 +79,56 @@ module Swanium
       def replace_save_ram(data : Bytes) : Nil
         raise ArgumentError.new("save data size does not match cartridge") unless data.size == @save_ram.size
         @save_ram.copy_from(data)
+      end
+
+      # Snapshot methods intentionally return independent buffers. Hardware
+      # state must otherwise be mutated through the address or I/O maps so
+      # device-specific masks and side effects cannot be bypassed.
+      def work_ram_snapshot : Bytes
+        @work_ram.dup
+      end
+
+      def save_ram_snapshot : Bytes
+        @save_ram.dup
+      end
+
+      def ports_snapshot : Bytes
+        @ports.dup
+      end
+
+      def work_ram_size : Int32
+        @work_ram.size
+      end
+
+      def save_ram_size : Int32
+        @save_ram.size
+      end
+
+      def ports_size : Int32
+        @ports.size
+      end
+
+      def has_save_ram? : Bool
+        !@save_ram.empty?
+      end
+
+      # PPU access stays behind the bus boundary: the renderer receives the
+      # internal views it requires, while frontends never receive mutable RAM
+      # or port-file references.
+      def latch_sprites(ppu : Ppu) : Nil
+        ppu.latch_sprites_if_needed(@work_ram, @ports)
+      end
+
+      def capture_next_frame_sprites(ppu : Ppu) : Nil
+        ppu.capture_next_frame_sprites(@work_ram, @ports)
+      end
+
+      def render_scanline(ppu : Ppu, line : UInt8) : Nil
+        ppu.render_scanline(line, @work_ram, @ports, @model.color?)
+      end
+
+      def interrupt_pending?(source : WonderSwanInterrupt) : Bool
+        (@ports[0xB4] & (1_u8 << source.value)) != 0_u8
       end
 
       # Drains the voice writes collected during the preceding CPU instruction.

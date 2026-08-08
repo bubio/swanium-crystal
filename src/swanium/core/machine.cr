@@ -87,7 +87,7 @@ module Swanium
         if vector = bus.pending_interrupt_vector?
           if @cpu.flags.interrupt && maskable_allowed
             cycles += service_wonder_swan_interrupt(bus, vector)
-          elsif @cpu.halted && (bus.ports[0xB4] & (1_u8 << WonderSwanInterrupt::VBlank.value)) != 0_u8
+          elsif @cpu.halted && bus.interrupt_pending?(WonderSwanInterrupt::VBlank)
             # A pending VBlank wakes HLT even when IF remains clear. The
             # request stays latched; only normal maskable delivery acknowledges
             # it once IF is enabled.
@@ -122,7 +122,7 @@ module Swanium
       # anchored to the master clock so that crossing does not accumulate drift.
       def run_wonder_swan_frame(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
         bus.set_keys(keys)
-        @ppu.latch_sprites_if_needed(bus.work_ram, bus.ports)
+        bus.latch_sprites(@ppu)
         while @cycles < @next_frame_cycle
           step_wonder_swan(bus)
         end
@@ -134,8 +134,8 @@ module Swanium
         while @scanline_cycles >= CYCLES_PER_SCANLINE
           @scanline_cycles -= CYCLES_PER_SCANLINE
           if @scanline < VISIBLE_SCANLINES
-            @ppu.capture_next_frame_sprites(bus.work_ram, bus.ports) if @scanline == VISIBLE_SCANLINES - 2
-            @ppu.render_scanline(@scanline.to_u8, bus.work_ram, bus.ports, bus.model.color?)
+            bus.capture_next_frame_sprites(@ppu) if @scanline == VISIBLE_SCANLINES - 2
+            bus.render_scanline(@ppu, @scanline.to_u8)
           end
           bus.set_current_scanline(@scanline.to_u8)
           bus.on_hblank

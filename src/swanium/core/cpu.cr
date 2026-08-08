@@ -77,8 +77,11 @@ module Swanium
     class Cpu
       LONG_REP_INTERRUPT_RETURN_CYCLE_THRESHOLD = 256_u32
 
-      property registers : Registers
-      property flags : Flags
+      # Register and flag objects remain observable for instruction tracing
+      # and debugger views, but replacing either object would bypass `restore`
+      # and make CPU snapshots non-atomic.
+      getter registers : Registers
+      getter flags : Flags
       property halted : Bool
       getter fault_opcode : UInt8?
       getter last_trace : InstructionTrace?

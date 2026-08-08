@@ -5,18 +5,18 @@ describe Swanium::Core::SaveState do
   it "restores CPU, timing, memory, ports, PPU, and APU deterministically" do
     machine = Swanium::Core::Machine.new
     bus = Swanium::Core::WonderSwanBus.new(save_ram_size: 32, model: Swanium::Core::WonderSwanModel::Crystal)
-    bus.work_ram[0] = 0x90_u8
+    bus.write_u8(0_u32, 0x90_u8)
     machine.cpu.registers.ax = 0x1234_u16
     machine.cpu.reset(0_u16, 0_u16)
     machine.step_wonder_swan(bus)
     machine.interrupts.enabled_mask = 0x24_u8
     machine.interrupts.request(Swanium::Core::InterruptSource::Timer)
-    machine.apu.tick(128_u32, bus.work_ram, bus.ports)
+    bus.tick_sound(128_u32, machine.apu)
     bus.write_u8(0x10000_u32, 0xA5_u8)
     saved = Swanium::Core::SaveState.dump(machine, bus)
 
     machine.cpu.registers.ax = 0xFFFF_u16
-    bus.work_ram[7] = 0x77_u8
+    bus.write_u8(7_u32, 0x77_u8)
     bus.write_u8(0x10000_u32, 0_u8)
     Swanium::Core::SaveState.load(saved, machine, bus)
 
@@ -26,7 +26,7 @@ describe Swanium::Core::SaveState do
     machine.interrupts.enabled_mask.should eq(0x24_u8)
     machine.interrupts.pending_mask.should eq(0x04_u8)
     machine.apu.samples.should eq([0_i16, 0_i16])
-    bus.work_ram[7].should eq(0_u8)
+    bus.read_u8(7_u32).should eq(0_u8)
     bus.read_u8(0x10000_u32).should eq(0xA5_u8)
     Swanium::Core::SaveState.dump(machine, bus).should eq(saved)
   end

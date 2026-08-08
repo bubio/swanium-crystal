@@ -10,9 +10,9 @@ describe Swanium::Core::Ppu do
     bus.write_io(0x00_u8, 0x01_u8)
     bus.write_io(0x1C_u8, 0x0F_u8) # pool 0 = black, pool 1 = white
     bus.write_io(0x20_u8, 0x10_u8) # pixel 0 -> pool 0, pixel 1 -> pool 1
-    bus.work_ram[0x2000] = 0x80_u8
+    bus.write_u8(0x2000_u32, 0x80_u8)
 
-    ppu.render_scanline(0_u8, bus.work_ram, bus.ports, false)
+    bus.render_scanline(ppu, 0_u8)
 
     ppu.framebuffer_rgb444[0].should eq(0x0FFF_u16)
     ppu.framebuffer_rgb444[1].should eq(0x0000_u16)
@@ -26,16 +26,16 @@ describe Swanium::Core::Ppu do
       bus.write_io(0x00_u8, 0x01_u8)
       color = 0x0A5C_u16
       address = 0xFE00 + 5 * 2
-      bus.work_ram[address] = (color & 0xFF).to_u8
-      bus.work_ram[address + 1] = (color >> 8).to_u8
+      bus.write_u8(address.to_u32, (color & 0xFF).to_u8)
+      bus.write_u8((address + 1).to_u32, (color >> 8).to_u8)
       if mode == 0xE0_u8
-        bus.work_ram[0x4000] = 0x50_u8
+        bus.write_u8(0x4000_u32, 0x50_u8)
       else
-        bus.work_ram[0x4000] = 0x80_u8 # planes 0 and 2
-        bus.work_ram[0x4002] = 0x80_u8
+        bus.write_u8(0x4000_u32, 0x80_u8) # planes 0 and 2
+        bus.write_u8(0x4002_u32, 0x80_u8)
       end
 
-      ppu.render_scanline(0_u8, bus.work_ram, bus.ports, true)
+      bus.render_scanline(ppu, 0_u8)
       ppu.framebuffer_rgb444[0].should eq(color)
     end
   end
@@ -47,16 +47,16 @@ describe Swanium::Core::Ppu do
     bus.write_io(0x00_u8, 0x04_u8)
     bus.write_io(0x04_u8, 0x10_u8)
     bus.write_io(0x06_u8, 1_u8)
-    bus.work_ram[0x2000] = 0x01_u8
-    bus.work_ram[0x2001] = 0x22_u8 # palette 1 + front priority
-    bus.work_ram[0x2002] = 0_u8
-    bus.work_ram[0x2003] = 0_u8
-    bus.work_ram[0x4020] = 0x30_u8
+    bus.write_u8(0x2000_u32, 0x01_u8)
+    bus.write_u8(0x2001_u32, 0x22_u8) # palette 1 + front priority
+    bus.write_u8(0x2002_u32, 0_u8)
+    bus.write_u8(0x2003_u32, 0_u8)
+    bus.write_u8(0x4020_u32, 0x30_u8)
     color_address = 0xFE00 + (9 * 16 + 3) * 2
-    bus.work_ram[color_address] = 0xBC_u8
-    bus.work_ram[color_address + 1] = 0x0A_u8
+    bus.write_u8(color_address.to_u32, 0xBC_u8)
+    bus.write_u8((color_address + 1).to_u32, 0x0A_u8)
 
-    ppu.render_scanline(0_u8, bus.work_ram, bus.ports, true)
+    bus.render_scanline(ppu, 0_u8)
 
     ppu.framebuffer_rgb444[0].should eq(0x0ABC_u16)
     ppu.framebuffer_rgba[0, 4].should eq(Bytes[0xAA, 0xBB, 0xCC, 0xFF])
@@ -72,16 +72,16 @@ describe Swanium::Core::Ppu do
     bus.write_io(0x09_u8, 0_u8)
     bus.write_io(0x0A_u8, 2_u8)
     bus.write_io(0x0B_u8, 0_u8)
-    bus.work_ram[0x4000] = 0x11_u8
-    bus.work_ram[0x4001] = 0x11_u8
-    bus.work_ram[0x4002] = 0x11_u8
-    bus.work_ram[0x4003] = 0x11_u8
-    bus.work_ram[0xFE00] = 0x23_u8
-    bus.work_ram[0xFE01] = 0x01_u8
-    bus.work_ram[0xFE02] = 0x56_u8
-    bus.work_ram[0xFE03] = 0x04_u8
+    bus.write_u8(0x4000_u32, 0x11_u8)
+    bus.write_u8(0x4001_u32, 0x11_u8)
+    bus.write_u8(0x4002_u32, 0x11_u8)
+    bus.write_u8(0x4003_u32, 0x11_u8)
+    bus.write_u8(0xFE00_u32, 0x23_u8)
+    bus.write_u8(0xFE01_u32, 0x01_u8)
+    bus.write_u8(0xFE02_u32, 0x56_u8)
+    bus.write_u8(0xFE03_u32, 0x04_u8)
 
-    ppu.render_scanline(0_u8, bus.work_ram, bus.ports, true)
+    bus.render_scanline(ppu, 0_u8)
 
     ppu.framebuffer_rgb444[0].should eq(0x0123_u16)
     ppu.framebuffer_rgb444[1].should eq(0x0456_u16)

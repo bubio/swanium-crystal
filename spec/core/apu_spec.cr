@@ -165,7 +165,7 @@ describe Swanium::Core::Apu do
     direct_ports = Bytes.new(0x100, 0_u8)
     machine = Swanium::Core::Machine.new
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
-    128.times { |index| bus.work_ram[index] = 0x90_u8 }
+    128.times { |index| bus.write_u8(index.to_u32, 0x90_u8) }
 
     direct.tick(128_u32, direct_wram, direct_ports)
     128.times { machine.step_wonder_swan(bus) }

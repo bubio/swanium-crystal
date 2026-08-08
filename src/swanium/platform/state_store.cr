@@ -40,18 +40,18 @@ module Swanium
       end
 
       def self.load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil
-        return if bus.save_ram.empty?
+        return unless bus.has_save_ram?
         source = cartridge_save_path(game_id)
         return unless File.exists?(source)
         bytes = File.read(source).to_slice
-        raise ArgumentError.new("cartridge save size does not match #{game_id}") unless bytes.size == bus.save_ram.size
+        raise ArgumentError.new("cartridge save size does not match #{game_id}") unless bytes.size == bus.save_ram_size
         bus.replace_save_ram(bytes)
       end
 
       def self.save_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Path?
-        return nil if bus.save_ram.empty?
+        return nil unless bus.has_save_ram?
         destination = cartridge_save_path(game_id)
-        write_atomically(destination, bus.save_ram)
+        write_atomically(destination, bus.save_ram_snapshot)
         destination
       end
 

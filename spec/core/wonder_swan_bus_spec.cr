@@ -1,6 +1,24 @@
 require "../spec_helper"
 
 describe Swanium::Core::WonderSwanBus do
+  it "returns independent snapshots instead of mutable internal buffers" do
+    bus = Swanium::Core::WonderSwanBus.new(save_ram_size: 1, model: Swanium::Core::WonderSwanModel::Color)
+    bus.write_u8(0_u32, 0x12_u8)
+    bus.write_u8(0x10000_u32, 0x34_u8)
+    bus.write_io(0x00_u8, 0x05_u8)
+
+    ram = bus.work_ram_snapshot
+    save = bus.save_ram_snapshot
+    ports = bus.ports_snapshot
+    ram[0] = 0_u8
+    save[0] = 0_u8
+    ports[0] = 0_u8
+
+    bus.read_u8(0_u32).should eq(0x12_u8)
+    bus.read_u8(0x10000_u32).should eq(0x34_u8)
+    bus.read_io(0x00_u8).should eq(0x05_u8)
+  end
+
   it "applies LCD, map, sprite, and monochrome palette port masks" do
     mono = Swanium::Core::WonderSwanBus.new
     mono.write_io(0x00_u8, 0xFF_u8)
@@ -183,7 +201,7 @@ describe Swanium::Core::WonderSwanBus do
     bus.write_io(0x9E_u8, 0xFF_u8)
     bus.read_io(0x9E_u8).should eq(0x03_u8)
 
-    bus.work_ram[0] = 0x50_u8
+    bus.write_u8(0_u32, 0x50_u8)
     bus.write_io(0x80_u8, 0_u8)
     bus.write_io(0x81_u8, 0xF8_u8)
     bus.write_io(0x88_u8, 0x11_u8)

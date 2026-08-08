@@ -161,7 +161,7 @@ module Swanium
           debugger = Frontend::Debugger.new
           Core::VideoTestPattern.configure(bus)
           configure_audio_test(bus)
-          bus.work_ram[0x1000] = 0x90_u8 # NOP stream for single-step debugging
+          bus.write_u8(0x1000_u32, 0x90_u8) # NOP stream for single-step debugging
           machine.cpu.reset(0_u16, 0x1000_u16)
           event = uninitialized LibSDL::Event
           running = true
@@ -190,7 +190,7 @@ module Swanium
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 256_u32 && !debugger.paused
             unless debugger.paused
-              machine.apu.tick(Core::Machine::CYCLES_PER_FRAME.to_u32, bus.work_ram, bus.ports, bus.model.color?)
+              bus.tick_sound(Core::Machine::CYCLES_PER_FRAME.to_u32, machine.apu)
               queue_audio(audio_device, machine.apu.samples)
               machine.apu.clear_samples
             end
@@ -463,7 +463,7 @@ module Swanium
 
       private def self.configure_audio_test(bus : Core::WonderSwanBus) : Nil
         bus.write_io(0x8F_u8, 8_u8)
-        16.times { |index| bus.work_ram[0x200 + index] = index < 8 ? 0x00_u8 : 0xFF_u8 }
+        16.times { |index| bus.write_u8((0x200 + index).to_u32, index < 8 ? 0x00_u8 : 0xFF_u8) }
         pitch = 1830_u16
         bus.write_io(0x80_u8, (pitch & 0xFF_u16).to_u8)
         bus.write_io(0x81_u8, (pitch >> 8).to_u8)

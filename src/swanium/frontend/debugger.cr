@@ -48,7 +48,7 @@ module Swanium
       # Layer 0/1/2 correspond to SCR1, SCR2 and sprites.
       def toggle_layer(bus : Core::WonderSwanBus, layer : Int32) : Nil
         bit = 1_u8 << layer
-        control = bus.ports[0x00]
+        control = bus.read_io(0x00_u8)
         @saved_display_control ||= control
         bus.write_io(0x00_u8, control ^ bit)
       end
@@ -65,7 +65,7 @@ module Swanium
         if trace = @trace.last?
           draw_text(rgba, 5, 32, "TRACE #{hex4(trace.code_segment)}:#{hex4(trace.instruction_pointer)} OP #{hex2(trace.opcode)} C #{trace.cycles}", 0xAAFFAA_u32)
         end
-        layers = bus.ports[0x00]
+        layers = bus.read_io(0x00_u8)
         draw_text(rgba, 5, 41, "LAYERS 1#{on_off(layers, 0)} 2#{on_off(layers, 1)} 3#{on_off(layers, 2)}", 0xCCCCFF_u32)
         draw_text(rgba, 5, 50, "AUDIO #{audio_latency_ms}MS DROP #{audio_underruns}", 0xFFCC88_u32)
       end

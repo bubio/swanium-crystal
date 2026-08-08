@@ -6,7 +6,6 @@ module Swanium
     # Copyright-free visual/input fixture used by the SDL demo and image specs.
     module VideoTestPattern
       def self.configure(bus : WonderSwanBus) : Nil
-        ram = bus.work_ram
         bus.write_io(0x60_u8, 0xE0_u8) # Color, packed 4bpp
         bus.write_io(0x07_u8, 0x00_u8)
         bus.write_io(0x00_u8, 0x05_u8) # SCR1 + sprites
@@ -23,8 +22,8 @@ module Swanium
         ]
         colors.each_with_index do |color, index|
           address = 0xFE00 + index * 2
-          ram[address] = (color & 0xFF).to_u8
-          ram[address + 1] = (color >> 8).to_u8
+          bus.write_u8(address.to_u32, (color & 0xFF).to_u8)
+          bus.write_u8((address + 1).to_u32, (color >> 8).to_u8)
         end
 
         # Eight packed 4bpp tiles. Their diagonal/checker structure exercises
@@ -38,9 +37,9 @@ module Swanium
               pixel = ((tile * 2 + x + y * 3) & 0x0F).to_u8
               address = 0x4000 + tile * 32 + y * 4 + (x >> 1)
               if (x & 1) == 0
-                ram[address] = pixel << 4
+                bus.write_u8(address.to_u32, pixel << 4)
               else
-                ram[address] |= pixel
+                bus.write_u8(address.to_u32, bus.read_u8(address.to_u32) | pixel)
               end
               x += 1
             end
@@ -57,8 +56,8 @@ module Swanium
             word |= 0x4000_u16 if (col & 3) == 3
             word |= 0x8000_u16 if (row & 3) == 3
             address = (row * 32 + col) * 2
-            ram[address] = (word & 0xFF).to_u8
-            ram[address + 1] = (word >> 8).to_u8
+            bus.write_u8(address.to_u32, (word & 0xFF).to_u8)
+            bus.write_u8((address + 1).to_u32, (word >> 8).to_u8)
             col += 1
           end
           row += 1
@@ -68,14 +67,14 @@ module Swanium
         16.times do |index|
           source = 0xFE00 + index * 2
           target = 0xFF00 + index * 2
-          ram[target] = ram[source]
-          ram[target + 1] = ram[source + 1]
+          bus.write_u8(target.to_u32, bus.read_u8(source.to_u32))
+          bus.write_u8((target + 1).to_u32, bus.read_u8((source + 1).to_u32))
         end
         sprite_word = 7_u16 | 0x2000_u16
-        ram[0x2000] = (sprite_word & 0xFF).to_u8
-        ram[0x2001] = (sprite_word >> 8).to_u8
-        ram[0x2002] = 68_u8
-        ram[0x2003] = 108_u8
+        bus.write_u8(0x2000_u32, (sprite_word & 0xFF).to_u8)
+        bus.write_u8(0x2001_u32, (sprite_word >> 8).to_u8)
+        bus.write_u8(0x2002_u32, 68_u8)
+        bus.write_u8(0x2003_u32, 108_u8)
       end
 
       def self.render(ppu : Ppu, bus : WonderSwanBus, keys : UInt16 = 0_u16) : Bytes
@@ -90,10 +89,10 @@ module Swanium
         # 254 (-2), not a checked signed-to-UInt8 conversion.
         bus.write_io(0x10_u8, (horizontal & 0xFF).to_u8)
         bus.write_io(0x11_u8, (vertical & 0xFF).to_u8)
-        ppu.latch_sprites_if_needed(bus.work_ram, bus.ports)
+        bus.latch_sprites(ppu)
         line = 0
         while line < Ppu::SCREEN_HEIGHT
-          ppu.render_scanline(line.to_u8, bus.work_ram, bus.ports, bus.model.color?)
+          bus.render_scanline(ppu, line.to_u8)
           line += 1
         end
         ppu.framebuffer_rgba

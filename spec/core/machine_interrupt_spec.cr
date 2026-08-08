@@ -148,7 +148,7 @@ describe Swanium::Core::Machine do
     machine.step_wonder_swan(bus)
 
     machine.cpu.halted.should be_false
-    bus.ports[0xB4].should eq(0x40_u8)
+    bus.interrupt_pending?(Swanium::Core::WonderSwanInterrupt::VBlank).should be_true
   end
 
   it "runs a headless program through an HBlank interrupt and back to HLT" do
