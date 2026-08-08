@@ -80,16 +80,24 @@ module Swanium
     end
 
     struct CartridgeImage
-      getter rom : Bytes
+      @rom : Bytes
+
       getter header : CartridgeHeader
 
-      def initialize(@rom : Bytes, @header : CartridgeHeader)
+      def initialize(rom : Bytes, @header : CartridgeHeader)
+        @rom = rom.dup
       end
 
       def self.from_bytes(rom : Bytes) : CartridgeImage
         raise ArgumentError.new("ROM is empty") if rom.empty?
         raise ArgumentError.new("ROM is larger than 16 MiB") if rom.size > 16 * 1024 * 1024
         new(rom, CartridgeHeader.parse(rom))
+      end
+
+      # ROM contents are immutable cartridge input. Return a copy so callers
+      # cannot alter the image after its footer and mapper have been accepted.
+      def rom_snapshot : Bytes
+        @rom.dup
       end
 
       def model : WonderSwanModel

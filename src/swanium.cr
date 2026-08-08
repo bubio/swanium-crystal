@@ -43,7 +43,7 @@ module Swanium
     elsif path = rom_path
       extension = File.extname(path).downcase
       raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
-      rom = File.read(path).to_slice.dup
+      rom = File.read(path).to_slice
       cartridge = Core::CartridgeImage.from_bytes(rom)
       title = File.basename(path)
       if frames = headless_frames

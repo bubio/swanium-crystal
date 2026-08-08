@@ -1,5 +1,6 @@
 require "../spec_helper"
 require "../../src/swanium/core/cartridge"
+require "../../src/swanium/core/save_state"
 
 describe Swanium::Core::CartridgeImage do
   it "decodes the footer model, orientation, mapper, and SRAM capacity" do
@@ -37,6 +38,21 @@ describe Swanium::Core::CartridgeImage do
 
     cartridge.model.should eq(Swanium::Core::WonderSwanModel::Mono)
     bus.model.should eq(Swanium::Core::WonderSwanModel::Crystal)
+  end
+
+  it "owns ROM bytes independently from callers and snapshots" do
+    rom = Bytes.new(0x10000, 0_u8)
+    rom[0] = 0x42_u8
+    rom[rom.size - 16] = 0xEA_u8
+    cartridge = Swanium::Core::CartridgeImage.from_bytes(rom)
+    rom[0] = 0_u8
+
+    snapshot = cartridge.rom_snapshot
+    snapshot[0] = 0_u8
+    bus = Swanium::Core::WonderSwanBus.from_cartridge(cartridge)
+
+    cartridge.rom_snapshot[0].should eq(0x42_u8)
+    bus.read_u8(0x20000_u32).should eq(0x42_u8)
   end
 
   it "detects the conservative RTC footer signal and exposes its protocol" do

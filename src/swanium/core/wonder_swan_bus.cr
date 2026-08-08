@@ -12,6 +12,7 @@ module Swanium
     # top through the same I/O port file.
     class WonderSwanBus < MemoryBus
       OPEN_BUS = 0xFF_u8
+      @rom : Bytes
 
       # SDMA feeds the Color/Crystal voice channel at a programmable cadence.
       # Keep its latched transfer state separate from the CPU-visible ports so
@@ -39,9 +40,10 @@ module Swanium
       getter rom_bank1_hi : UInt8
       getter cartridge_header : CartridgeHeader?
 
-      def initialize(@rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono,
+      def initialize(rom : Bytes = Bytes.new(0), save_ram_size : Int = 0, @model : WonderSwanModel = WonderSwanModel::Mono,
                      @cartridge_header : CartridgeHeader? = nil, @save_ram_mapped : Bool = true)
         raise ArgumentError.new("save RAM size must not be negative") if save_ram_size < 0
+        @rom = rom.dup
         @work_ram = Bytes.new(0x10000, 0_u8)
         @save_ram = Bytes.new(save_ram_size, 0_u8)
         if @cartridge_header && @cartridge_header.not_nil!.save_medium.in?(SaveMedium::Eeprom128B, SaveMedium::Eeprom1KiB, SaveMedium::Eeprom2KiB)
@@ -72,7 +74,7 @@ module Swanium
         # The footer's color-required bit describes the minimum console, not
         # the selected host hardware; Mono and Color cartridges run through
         # SwanCrystal's backwards-compatible hardware path.
-        new(cartridge.rom, save_ram_size: header.save_medium.size, model: WonderSwanModel::Crystal,
+        new(cartridge.rom_snapshot, save_ram_size: header.save_medium.size, model: WonderSwanModel::Crystal,
           cartridge_header: header, save_ram_mapped: header.save_medium.sram?)
       end
 
