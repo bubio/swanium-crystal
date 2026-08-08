@@ -1,5 +1,6 @@
 require "./wonder_swan_wave_generator"
 require "./pcm_sample_buffer"
+require "./wonder_swan_noise_generator"
 
 module Swanium
   module Core
@@ -13,9 +14,7 @@ module Swanium
 
       def initialize
         @waves = WonderSwanWaveGenerator.new
-        @lfsr = 0_u16
-        @noise_counter = 0_u16
-        @noise_output = 0_u8
+        @noise = WonderSwanNoiseGenerator.new
         @sweep_counter = 0_u32
         @sweep_step = 0_u8
         @fast_sweep_primed = false
@@ -27,9 +26,7 @@ module Swanium
 
       def reset : Nil
         @waves.reset
-        @lfsr = 0_u16
-        @noise_counter = 0_u16
-        @noise_output = 0_u8
+        @noise.reset
         @sweep_counter = 0_u32
         @sweep_step = 0_u8
         @fast_sweep_primed = false
@@ -62,7 +59,7 @@ module Swanium
           next if (control & (1_u8 << index)) == 0_u8
           next if index == 1 && (control & 0x20_u8) != 0_u8
 
-          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @waves.sample(index)
+          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise.output : @waves.sample(index)
           volume = ports[0x88 + index]
           left &+= sample.to_u16 * (volume >> 4).to_u16
           right &+= sample.to_u16 * (volume & 0x0F_u8).to_u16
@@ -82,12 +79,7 @@ module Swanium
       end
 
       def reset_noise_lfsr(ports : Bytes) : Nil
-        @lfsr = 0_u16
-        @noise_output = 0_u8
-        @noise_counter = 2048_u16 - read_pitch(ports, 3)
-        ports[0x8E] &= 0xF7_u8
-        ports[0x92] = 0_u8
-        ports[0x93] = 0_u8
+        @noise.reset_lfsr(ports)
       end
 
       # Returns a copy for inspection without exposing the APU's producer
@@ -116,7 +108,7 @@ module Swanium
 
         cycles.times do
           step_sweep(ports)
-          step_noise(ports, color_hardware)
+          @noise.step(ports, color_hardware)
           @waves.step(wram, ports)
           @sample_accumulator += 1_u32
           if @sample_accumulator == CYCLES_PER_SAMPLE
@@ -129,9 +121,7 @@ module Swanium
 
       def save_state(io : IO) : Nil
         @waves.save_state(io)
-        io.write_bytes(@lfsr, IO::ByteFormat::LittleEndian)
-        io.write_bytes(@noise_counter, IO::ByteFormat::LittleEndian)
-        io.write_byte(@noise_output)
+        @noise.save_state(io)
         io.write_bytes(@sweep_counter, IO::ByteFormat::LittleEndian)
         io.write_byte(@sweep_step)
         io.write_byte(@fast_sweep_primed ? 1_u8 : 0_u8)
@@ -143,9 +133,7 @@ module Swanium
 
       def load_state(io : IO) : Nil
         @waves.load_state(io)
-        @lfsr = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-        @noise_counter = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-        @noise_output = read_byte(io)
+        @noise.load_state(io)
         @sweep_counter = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         @sweep_step = read_byte(io)
         @fast_sweep_primed = read_byte(io) != 0_u8
@@ -207,40 +195,6 @@ module Swanium
         publish_output_ports(ports)
       end
 
-      private def step_noise(ports : Bytes, color_hardware : Bool) : Nil
-        noise = ports[0x8E]
-        if (noise & 0x08_u8) != 0_u8
-          # Crystal owns the APU outside the bus, so consume the self-clearing
-          # reset request at the next sound tick after the OUT instruction.
-          reset_noise_lfsr(ports)
-          return
-        end
-        # The CPU-visible LFSR at 0x92/0x93 is a cartridge-visible random
-        # source, not merely an audible channel-4 implementation detail.
-        # Clock Tower reads it while loading with channel 4 muted; holding it
-        # then leaves the game permanently on its black loading screen.
-        return if (noise & 0x10_u8) == 0_u8
-        # Mono hardware only advances the exposed random register while the
-        # audible CH4 noise path is selected; SwanCrystal keeps clocking it
-        # behind the gate, matching Clock Tower's loading-time polling.
-        return unless color_hardware || (ports[0x90] & 0x88_u8) == 0x88_u8
-        # The gate controls the LFSR itself; CH4_ENABLE/CH4_NOISE control only
-        # whether its output is mixed. Clock Tower polls this register while
-        # channel four is muted during QUICK START, so gating it on audible
-        # output would leave its loader spinning forever.
-        @noise_counter &-= 1_u16 if @noise_counter > 0_u16
-        return unless @noise_counter == 0_u16
-
-        taps = StaticArray[14_u8, 10_u8, 13_u8, 4_u8, 8_u8, 6_u8, 9_u8, 11_u8]
-        tap = taps[(noise & 0x07_u8).to_i]
-        feedback = 1_u16 ^ ((@lfsr >> 7) & 1_u16) ^ ((@lfsr >> tap) & 1_u16)
-        @lfsr = ((@lfsr << 1) | feedback) & 0x7FFF_u16
-        @noise_output = (@lfsr & 1_u16) == 0_u16 ? 0_u8 : 0x0F_u8
-        @noise_counter = 2048_u16 - read_pitch(ports, 3)
-        ports[0x92] = (@lfsr & 0xFF_u16).to_u8
-        ports[0x93] = (@lfsr >> 8).to_u8
-      end
-
       private def step_sweep(ports : Bytes) : Nil
         unless (ports[0x90] & 0x44_u8) == 0x44_u8
           @fast_sweep_primed = false
@@ -281,7 +235,7 @@ module Swanium
         4.times do |index|
           next if (control & (1_u8 << index)) == 0
           next if index == 1 && (control & 0x20_u8) != 0_u8
-          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @waves.sample(index)
+          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise.output : @waves.sample(index)
           volume = ports[0x88 + index]
           left += sample.to_i32 * (volume >> 4).to_i32 * MIX_SCALE
           right += sample.to_i32 * (volume & 0x0F_u8).to_i32 * MIX_SCALE
