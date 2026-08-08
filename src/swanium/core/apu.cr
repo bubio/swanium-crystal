@@ -108,6 +108,10 @@ module Swanium
           tick_silence(cycles, ports)
           return
         end
+        if wave_only_fast_path?(ports, color_rendering_enabled)
+          tick_waves_only(cycles, wram, ports, color_rendering_enabled)
+          return
+        end
 
         cycles.times do
           step_sweep(ports)
@@ -205,6 +209,65 @@ module Swanium
           sample_count.times { @samples << 0_i16 << 0_i16 }
         end
         0x96_u8.upto(0x9B_u8) { |port| ports[port] = 0_u8 }
+      end
+
+      # This path retains ordinary wave generators but has no source whose
+      # state must be checked on every cycle. Advance each channel directly to
+      # the next PCM sampling boundary, preserving the same counter-underflow
+      # and waveform-index behaviour as step_waves.
+      private def wave_only_fast_path?(ports : Bytes, color_rendering_enabled : Bool) : Bool
+        (ports[0x90] & 0xE0_u8) == 0_u8 &&
+          (ports[0x8E] & 0x18_u8) == 0_u8 &&
+          (!color_rendering_enabled || (ports[0x6A] & 0x80_u8) == 0_u8)
+      end
+
+      private def tick_waves_only(cycles : UInt32, wram : Bytes, ports : Bytes,
+                                  color_rendering_enabled : Bool) : Nil
+        @fast_sweep_primed = false
+        remaining = cycles
+        while remaining > 0_u32
+          until_sample = CYCLES_PER_SAMPLE - @sample_accumulator
+          chunk = remaining < until_sample ? remaining : until_sample
+          advance_waves(chunk, wram, ports)
+          @sample_accumulator += chunk
+          remaining -= chunk
+          if @sample_accumulator == CYCLES_PER_SAMPLE
+            @sample_accumulator = 0_u32
+            mix_sample(ports, color_rendering_enabled)
+          end
+        end
+        publish_output_ports(ports)
+      end
+
+      private def advance_waves(cycles : UInt32, wram : Bytes, ports : Bytes) : Nil
+        control = ports[0x90]
+        wave_base = ports[0x8F].to_i << 6
+        4.times do |index|
+          next if (control & (1_u8 << index)) == 0_u8
+          advance_wave(index, cycles, wram, ports, wave_base)
+        end
+      end
+
+      private def advance_wave(index : Int32, cycles : UInt32, wram : Bytes,
+                               ports : Bytes, wave_base : Int32) : Nil
+        channel = @channels[index]
+        remaining = cycles
+        pitch = read_pitch(ports, index)
+        period = 2048_u16 - pitch
+        while remaining > 0_u32
+          until_next = channel.counter == 0_u16 ? 1_u32 : channel.counter.to_u32
+          if until_next > remaining
+            channel.counter -= remaining.to_u16
+            break
+          end
+          remaining -= until_next
+          channel.counter = period
+          channel.index = (channel.index &+ 1_u8) & 0x1F_u8
+          address = (wave_base + index * 16 + channel.index.to_i // 2) & 0xFFFF
+          byte = wram[address]
+          channel.sample = (channel.index & 1_u8) == 0_u8 ? byte & 0x0F_u8 : byte >> 4
+        end
+        @channels[index] = channel
       end
 
       private def step_noise(ports : Bytes, color_hardware : Bool) : Nil

@@ -45,6 +45,24 @@ describe Swanium::Core::Apu do
     Digest::SHA256.hexdigest(bytes).should eq("bf8c81726fb908f2f73768afb2a8f629f91837daa9e5710e7c10569a6828fd87")
   end
 
+  it "preserves wave phase when a channel advances every cycle" do
+    apu = Swanium::Core::Apu.new
+    wram = Bytes.new(0x10000, 0_u8)
+    ports = Bytes.new(0x100, 0_u8)
+    wram[0x200] = 0x21_u8
+    ports[0x80] = 0xFF_u8
+    ports[0x81] = 0x07_u8
+    ports[0x88] = 0x11_u8
+    ports[0x8F] = 8_u8
+    ports[0x90] = 0x01_u8
+
+    apu.tick(128_u32, wram, ports)
+
+    # 128 steps wraps the 32-sample wave index to zero, whose low nibble is 1.
+    # The speaker path sums the equal left/right contributions.
+    apu.samples.should eq([64_i16, 64_i16])
+  end
+
   it "updates sweep and noise state through hardware ports" do
     apu = Swanium::Core::Apu.new
     wram = Bytes.new(0x10000, 0_u8)
