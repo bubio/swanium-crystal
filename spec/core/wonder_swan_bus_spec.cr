@@ -135,6 +135,7 @@ describe Swanium::Core::WonderSwanBus do
     rom[1] = 0xCD_u8
     bus = Swanium::Core::WonderSwanBus.new(rom, model: Swanium::Core::WonderSwanModel::Color)
     bus.read_io(0xA0_u8).should eq(0x87_u8)
+    bus.write_io(0x60_u8, 0x80_u8)
     bus.write_io(0x40_u8, 0_u8)
     bus.write_io(0x41_u8, 0_u8)
     bus.write_io(0x42_u8, 0x0F_u8)
@@ -150,9 +151,88 @@ describe Swanium::Core::WonderSwanBus do
     bus.consume_wait_cycles.should eq(0_u32)
   end
 
+  it "matches Color HyperVoice latch and APU register semantics" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    apu = Swanium::Core::Apu.new
+    bus.write_io(0x69_u8, 0x40_u8)
+    bus.write_io(0x6A_u8, 0x8A_u8)
+    bus.write_io(0x6B_u8, 0xFF_u8)
+    bus.read_io(0x69_u8).should eq(0_u8)
+    bus.read_io(0x6A_u8).should eq(0x8A_u8)
+    bus.read_io(0x6B_u8).should eq(0x6F_u8)
+
+    bus.write_io(0x64_u8, 0x34_u8)
+    bus.read_io(0x69_u8).should eq(0_u8)
+    bus.write_io(0x69_u8, 0x40_u8)
+    bus.read_io(0x64_u8).should eq(0_u8)
+    bus.read_io(0x9E_u8).should eq(0x03_u8)
+    bus.write_io(0x9E_u8, 0xFF_u8)
+    bus.read_io(0x9E_u8).should eq(0x03_u8)
+
+    bus.work_ram[0] = 0x50_u8
+    bus.write_io(0x80_u8, 0_u8)
+    bus.write_io(0x81_u8, 0xF8_u8)
+    bus.write_io(0x88_u8, 0x11_u8)
+    bus.write_io(0x90_u8, 0x01_u8)
+    bus.tick_sound(1_u32, apu)
+    bus.read_io(0x81_u8).should eq(0_u8)
+    bus.read_io(0x96_u8).should eq(5_u8)
+    bus.read_io(0x98_u8).should eq(5_u8)
+    bus.read_io(0x9A_u8).should eq(10_u8)
+  end
+
+  it "gates HyperVoice mixing on the Color video-mode bit" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    apu = Swanium::Core::Apu.new
+    bus.write_io(0x69_u8, 0x20_u8)
+    bus.write_io(0x6A_u8, 0x80_u8)
+    bus.write_io(0x6B_u8, 0x40_u8)
+    bus.write_io(0x91_u8, 0x80_u8)
+
+    bus.tick_sound(128_u32, apu)
+    apu.samples.last.should eq(0_i16)
+    apu.clear_samples
+
+    bus.write_io(0x60_u8, 0x80_u8)
+    bus.tick_sound(128_u32, apu)
+    apu.samples[-2].should_not eq(0_i16)
+  end
+
+  it "blocks GDMA from slow ROM only while the ROM-wait control bit is set" do
+    rom = Bytes.new(0x10000, 0_u8)
+    rom[0] = 0x5A_u8
+    bus = Swanium::Core::WonderSwanBus.new(rom, model: Swanium::Core::WonderSwanModel::Crystal)
+    bus.write_io(0x60_u8, 0x80_u8)
+    bus.write_io(0xA0_u8, 0x08_u8)
+    bus.write_io(0x42_u8, 0x08_u8)
+    bus.write_io(0x44_u8, 0_u8)
+    bus.write_io(0x46_u8, 2_u8)
+    bus.write_io(0x48_u8, 0x80_u8)
+
+    bus.read_io(0x46_u8).should eq(2_u8)
+    bus.read_u8(0_u32).should eq(0_u8)
+
+    bus.write_io(0xA0_u8, 0_u8)
+    bus.write_io(0x48_u8, 0x80_u8)
+    bus.read_io(0x46_u8).should eq(0_u8)
+    bus.read_u8(0_u32).should eq(0x5A_u8)
+  end
+
+  it "applies DMA control readback masks and side effects" do
+    bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
+    bus.write_io(0x60_u8, 0x80_u8)
+    bus.write_io(0x48_u8, 0xC0_u8) # zero length completes immediately
+
+    bus.read_io(0x48_u8).should eq(0x40_u8)
+    bus.read_io(0x48_u8).should eq(0_u8)
+    bus.write_io(0x42_u8, 0xFF_u8)
+    bus.read_io(0x42_u8).should eq(0x0F_u8)
+  end
+
   it "streams Color SDMA into the voice channel and completes the transfer" do
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
     apu = Swanium::Core::Apu.new
+    bus.write_io(0x60_u8, 0x80_u8)
     bus.write_u8(0x10_u32, 0xA5_u8)
     bus.write_io(0x90_u8, 0x20_u8)
     bus.write_io(0x4A_u8, 0x10_u8)
@@ -172,6 +252,7 @@ describe Swanium::Core::WonderSwanBus do
   it "supports SDMA decrement, repeat, hold, and 20-bit register masks" do
     bus = Swanium::Core::WonderSwanBus.new(model: Swanium::Core::WonderSwanModel::Crystal)
     apu = Swanium::Core::Apu.new
+    bus.write_io(0x60_u8, 0x80_u8)
     bus.write_io(0x4C_u8, 0xFF_u8)
     bus.write_io(0x50_u8, 0xFF_u8)
     bus.read_io(0x4C_u8).should eq(0x0F_u8)

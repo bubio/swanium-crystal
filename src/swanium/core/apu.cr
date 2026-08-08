@@ -56,6 +56,46 @@ module Swanium
         @voice_previous = current
       end
 
+      # CPU-visible digital mixer registers 0x96--0x9B are derived from the
+      # current oscillator state; they are not ordinary writable latches.
+      def read_output_port(port : UInt8, ports : Bytes) : UInt8
+        raise ArgumentError.new("invalid APU output port") unless port.in?(0x96_u8..0x9B_u8)
+
+        control = ports[0x90]
+        left = 0_u16
+        right = 0_u16
+        4.times do |index|
+          next if (control & (1_u8 << index)) == 0_u8
+          next if index == 1 && (control & 0x20_u8) != 0_u8
+
+          sample = index == 3 && (control & 0x80_u8) != 0_u8 ? @noise_output : @channels[index].sample
+          volume = ports[0x88 + index]
+          left &+= sample.to_u16 * (volume >> 4).to_u16
+          right &+= sample.to_u16 * (volume & 0x0F_u8).to_u16
+        end
+        if (control & 0x20_u8) != 0_u8
+          voice = ports[0x89].to_u16
+          left &+= voice
+          right &+= voice
+        end
+
+        value = case port & 0xFE_u8
+                when 0x96_u8 then right
+                when 0x98_u8 then left
+                else              left &+ right
+                end
+        (port & 1_u8) == 0_u8 ? (value & 0x00FF_u16).to_u8 : (value >> 8).to_u8
+      end
+
+      def reset_noise_lfsr(ports : Bytes) : Nil
+        @lfsr = 0_u16
+        @noise_output = 0_u8
+        @noise_counter = 2048_u16 - read_pitch(ports, 3)
+        ports[0x8E] &= 0xF7_u8
+        ports[0x92] = 0_u8
+        ports[0x93] = 0_u8
+      end
+
       def clear_samples : Nil
         @samples.clear
       end
@@ -71,6 +111,7 @@ module Swanium
             mix_sample(ports, color_hardware)
           end
         end
+        publish_output_ports(ports)
       end
 
       def save_state(io : IO) : Nil
@@ -235,6 +276,10 @@ module Swanium
 
       private def signed_word(low : UInt8, high : UInt8) : Int32
         (low.to_u16 | (high.to_u16 << 8)).unsafe_as(Int16).to_i32
+      end
+
+      private def publish_output_ports(ports : Bytes) : Nil
+        0x96_u8.upto(0x9B_u8) { |port| ports[port] = read_output_port(port, ports) }
       end
 
       private def read_pitch(ports : Bytes, channel : Int32) : UInt16

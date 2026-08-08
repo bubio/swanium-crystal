@@ -104,6 +104,8 @@ module Swanium
         @keys = 0_u16
         @voice_writes = [] of UInt8
         @sdma = SdmaState.new
+        @noise_reset_pending = false
+        @ports[0x9E] = 0x03_u8
         @pending_wait_cycles = 0_u32
       end
 
@@ -153,16 +155,20 @@ module Swanium
       end
 
       def tick_sound(cycles : UInt32, apu : Apu) : Nil
+        if @noise_reset_pending
+          apu.reset_noise_lfsr(@ports)
+          @noise_reset_pending = false
+        end
         unless @model.color? && sdma_enabled?
           @sdma.running = false
           @sdma.clock = 0_u32
-          apu.tick(cycles, @work_ram, @ports, @model.color?)
+          apu.tick(cycles, @work_ram, @ports, color_rendering_enabled?)
           return
         end
 
         cycles.times do
           tick_sdma_cycle(apu)
-          apu.tick(1_u32, @work_ram, @ports, @model.color?)
+          apu.tick(1_u32, @work_ram, @ports, color_rendering_enabled?)
         end
       end
 
@@ -209,14 +215,37 @@ module Swanium
         # Hardware-only/read-only ports will gain device-specific handlers;
         # unknown ports intentionally retain open-bus behavior.
         case port
-        when 0x00_u8                            then @ports[port] & 0x3F_u8
-        when 0x01_u8                            then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x07_u8
-        when 0x04_u8                            then @ports[port] & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
-        when 0x05_u8                            then @ports[port] & 0x7F_u8
-        when 0x07_u8                            then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x77_u8
-        when 0x15_u8                            then @ports[port] & 0x3F_u8
-        when 0x19_u8, 0x1B_u8                   then 0_u8
-        when 0x20_u8..0x3F_u8                   then @ports[port] & mono_palette_port_mask(port)
+        when 0x00_u8                   then @ports[port] & 0x3F_u8
+        when 0x01_u8                   then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x07_u8
+        when 0x04_u8                   then @ports[port] & (color_rendering_enabled? ? 0x3F_u8 : 0x1F_u8)
+        when 0x05_u8                   then @ports[port] & 0x7F_u8
+        when 0x07_u8                   then color_rendering_enabled? ? @ports[port] : @ports[port] & 0x77_u8
+        when 0x15_u8                   then @ports[port] & 0x3F_u8
+        when 0x19_u8, 0x1B_u8          then 0_u8
+        when 0x20_u8..0x3F_u8          then @ports[port] & mono_palette_port_mask(port)
+        when 0x40_u8, 0x44_u8, 0x46_u8 then @ports[port] & 0xFE_u8
+        when 0x42_u8                   then @ports[port] & 0x0F_u8
+        when 0x43_u8, 0x49_u8          then 0_u8
+        when 0x48_u8
+          value = @ports[port] & 0xC0_u8
+          @ports[port] = 0_u8
+          value
+        when 0x4C_u8, 0x50_u8                   then @ports[port] & 0x0F_u8
+        when 0x4D_u8, 0x51_u8, 0x53_u8..0x5F_u8 then 0_u8
+        when 0x64_u8..0x69_u8                   then 0_u8
+        when 0x6A_u8                            then @ports[port]
+        when 0x6B_u8                            then @ports[port] & 0x6F_u8
+        when 0x6C_u8..0x7F_u8                   then 0_u8
+        when 0x81_u8, 0x83_u8, 0x85_u8, 0x87_u8 then @ports[port] & 0x07_u8
+        when 0x8D_u8                            then @ports[port] & 0x1F_u8
+        when 0x8E_u8                            then @ports[port] & 0x17_u8
+        when 0x90_u8                            then @ports[port] & 0xEF_u8
+        when 0x91_u8                            then @ports[port] & 0x8F_u8
+        when 0x92_u8, 0x93_u8                   then @ports[port]
+        when 0x94_u8                            then @ports[port] & 0x0F_u8
+        when 0x96_u8..0x9B_u8                   then @ports[port]
+        when 0x9E_u8                            then @ports[port] & 0x03_u8
+        when 0x9F_u8, 0xA1_u8                   then 0_u8
         when 0xC4_u8, 0xC5_u8, 0xC6_u8, 0xC7_u8 then @eeprom ? @ports[port] : OPEN_BUS
         when 0xC8_u8                            then @eeprom ? 0x02_u8 : OPEN_BUS
         when 0x52_u8                            then @ports[port] & 0xDF_u8
@@ -242,6 +271,11 @@ module Swanium
           # INT_CAUSE reads. Serial/cartridge/DMA remain level-latched.
           @ports[port] &= 0x0D_u8
           cause
+        when 0xB6_u8 then 0_u8
+        when 0xB7_u8
+          value = @ports[port] & 0x10_u8
+          @ports[port] = value
+          value
         when 0xB5_u8 then scan_keys(@ports[port] & 0x70_u8)
         else              @ports[port]
         end
@@ -264,6 +298,38 @@ module Swanium
         when 0x19_u8, 0x1B_u8
         when 0x20_u8..0x3F_u8
           @ports[port] = value & mono_palette_port_mask(port)
+        when 0x64_u8..0x67_u8
+          write_hypervoice_direct(port, value) if @model.color?
+        when 0x68_u8
+          @ports[port] = value if @model.color?
+        when 0x69_u8
+          write_hypervoice_data_latch(value) if @model.color?
+        when 0x6A_u8
+          @ports[port] = value if @model.color?
+        when 0x6B_u8
+          @ports[port] = value & 0x6F_u8 if @model.color?
+        when 0x6C_u8..0x7F_u8
+        when 0x81_u8, 0x83_u8, 0x85_u8, 0x87_u8
+          @ports[port] = value & 0x07_u8
+        when 0x8D_u8
+          @ports[port] = value & 0x1F_u8
+        when 0x8E_u8
+          @ports[port] = value & 0x1F_u8
+          if (@ports[port] & 0x08_u8) != 0_u8
+            @ports[0x8E] &= 0xF7_u8
+            @ports[0x92] = 0_u8
+            @ports[0x93] = 0_u8
+            @noise_reset_pending = true
+          end
+        when 0x90_u8
+          @ports[port] = value & 0xEF_u8
+        when 0x91_u8
+          @ports[port] = value & 0x8F_u8
+        when 0x92_u8, 0x93_u8, 0x96_u8..0x9B_u8, 0x9F_u8, 0xA1_u8
+        when 0x94_u8
+          @ports[port] = value & 0x0F_u8
+        when 0x9E_u8
+          @ports[port] = value & 0x03_u8
         when 0xC4_u8..0xC7_u8
           @ports[port] = value
         when 0xC8_u8
@@ -302,7 +368,7 @@ module Swanium
         when 0xA2_u8, 0xA3_u8
           @ports[port] = value & 0x0F_u8
         when 0x40_u8..0x5F_u8
-          write_dma_io(port, value) if @model.color?
+          write_dma_io(port, value) if color_rendering_enabled?
         when 0xA4_u8, 0xA5_u8, 0xA6_u8, 0xA7_u8
           @ports[port] = value
           @ports[port &+ 4_u8] = value
@@ -443,7 +509,7 @@ module Swanium
         decrement = (@ports[0x48] & 0x40_u8) != 0_u8
         transferred = 0_u32
         while remaining > 0_u16
-          break if source >= 0x10000_u32 && source <= 0x1FFFF_u32
+          break if gdma_source_blocked?(source)
 
           write_work_ram(destination & 0xFFFF_u32, read_u8(source))
           if decrement
@@ -559,6 +625,24 @@ module Swanium
       private def write_work_ram(address : UInt32, value : UInt8) : Nil
         return if address > 0x03FFF_u32 && !@model.color?
         @work_ram[address.to_i] = value
+      end
+
+      private def gdma_source_blocked?(source : UInt32) : Bool
+        (source >= 0x10000_u32 && source <= 0x1FFFF_u32) ||
+          (source >= 0x80000_u32 && source <= 0x8FFFF_u32 && (@ports[0xA0] & 0x08_u8) != 0_u8)
+      end
+
+      private def write_hypervoice_direct(port : UInt8, value : UInt8) : Nil
+        @ports[port] = value
+        @ports[0x69] = 0_u8
+      end
+
+      private def write_hypervoice_data_latch(value : UInt8) : Nil
+        @ports[0x64] = 0_u8
+        @ports[0x65] = 0_u8
+        @ports[0x66] = 0_u8
+        @ports[0x67] = 0_u8
+        @ports[0x69] = value
       end
 
       private def read_save_ram(address : UInt32) : UInt8
