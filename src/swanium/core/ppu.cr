@@ -1,3 +1,5 @@
+require "./wonder_swan_sprite_latch"
+
 module Swanium
   module Core
     # WonderSwan LCD renderer. The internal framebuffer uses the machine's
@@ -11,31 +13,12 @@ module Swanium
       TILE_DATA_4BPP = 0x4000
       PALETTE_RAM    = 0xFE00
 
-      private struct Sprite
-        getter tile : UInt16
-        getter palette : UInt8
-        getter x : UInt8
-        getter y : UInt8
-        getter priority : Bool
-        getter window : Bool
-        getter hflip : Bool
-        getter vflip : Bool
-
-        def initialize(@tile = 0_u16, @palette = 0_u8, @x = 0_u8, @y = 0_u8,
-                       @priority = false, @window = false, @hflip = false, @vflip = false)
-        end
-      end
-
       getter current_line : UInt8
 
       def initialize
         @rgb444 = Array(UInt16).new(PIXEL_COUNT, 0_u16)
         @rgba = Bytes.new(PIXEL_COUNT * 4, 0_u8)
-        @sprites = Array(Sprite).new(128) { Sprite.new }
-        @next_sprites = Array(Sprite).new(128) { Sprite.new }
-        @sprite_count = 0
-        @next_sprite_count = 0
-        @sprite_latch_valid = false
+        @sprite_latch = WonderSwanSpriteLatch.new
         @current_line = 0_u8
       end
 
@@ -66,56 +49,38 @@ module Swanium
         @rgb444.fill(0_u16)
         @rgba.fill(0_u8)
         @current_line = 0_u8
-        @sprite_count = 0
-        @next_sprite_count = 0
-        @sprite_latch_valid = false
+        @sprite_latch.reset
       end
 
       def save_state(io : IO) : Nil
         io.write_byte(@current_line)
-        io.write_bytes(@sprite_count.to_u16, IO::ByteFormat::LittleEndian)
-        io.write_bytes(@next_sprite_count.to_u16, IO::ByteFormat::LittleEndian)
-        io.write_byte(@sprite_latch_valid ? 1_u8 : 0_u8)
+        @sprite_latch.save_metadata(io)
         @rgb444.each { |pixel| io.write_bytes(pixel, IO::ByteFormat::LittleEndian) }
-        write_sprites(io, @sprites)
-        write_sprites(io, @next_sprites)
+        @sprite_latch.save_buffers(io)
       end
 
       def load_state(io : IO) : Nil
         current_line = read_byte(io)
-        sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
-        next_sprite_count = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian).to_i
-        sprite_latch_valid = read_byte(io)
-        unless current_line < SCREEN_HEIGHT && sprite_count <= 128 && next_sprite_count <= 128 && sprite_latch_valid <= 1_u8
+        unless current_line < SCREEN_HEIGHT
           raise ArgumentError.new("invalid PPU state")
         end
 
         @current_line = current_line
-        @sprite_count = sprite_count
-        @next_sprite_count = next_sprite_count
-        @sprite_latch_valid = sprite_latch_valid == 1_u8
+        @sprite_latch.load_metadata(io)
         @rgb444.map! { io.read_bytes(UInt16, IO::ByteFormat::LittleEndian) }
-        @sprites = read_sprites(io)
-        @next_sprites = read_sprites(io)
+        @sprite_latch.load_buffers(io)
       end
 
       def latch_sprites_if_needed(wram : Bytes, ports : Bytes) : Nil
-        latch_sprites(wram, ports, @sprites) unless @sprite_latch_valid
-        @sprite_latch_valid = true
+        @sprite_latch.latch_current_if_needed(wram, ports)
       end
 
       def capture_next_frame_sprites(wram : Bytes, ports : Bytes) : Nil
-        @next_sprite_count = latch_sprites(wram, ports, @next_sprites)
+        @sprite_latch.capture_next(wram, ports)
       end
 
       def promote_next_frame_sprites : Nil
-        i = 0
-        while i < @next_sprite_count
-          @sprites[i] = @next_sprites[i]
-          i += 1
-        end
-        @sprite_count = @next_sprite_count
-        @sprite_latch_valid = true
+        @sprite_latch.promote_next
       end
 
       def render_scanline(line : UInt8, wram : Bytes, ports : Bytes, color_hardware : Bool) : Nil
@@ -180,34 +145,6 @@ module Swanium
         {tile_pixel(wram, ports, tile, tx, ty, color_mode), ((word >> 9) & 0x0F).to_u8}
       end
 
-      private def write_sprites(io : IO, sprites : Array(Sprite)) : Nil
-        sprites.each do |sprite|
-          io.write_bytes(sprite.tile, IO::ByteFormat::LittleEndian)
-          io.write_byte(sprite.palette)
-          io.write_byte(sprite.x)
-          io.write_byte(sprite.y)
-          flags = 0_u8
-          flags |= 0x01_u8 if sprite.priority
-          flags |= 0x02_u8 if sprite.window
-          flags |= 0x04_u8 if sprite.hflip
-          flags |= 0x08_u8 if sprite.vflip
-          io.write_byte(flags)
-        end
-      end
-
-      private def read_sprites(io : IO) : Array(Sprite)
-        Array(Sprite).new(128) do
-          tile = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-          palette = read_byte(io)
-          x = read_byte(io)
-          y = read_byte(io)
-          flags = read_byte(io)
-          Sprite.new(tile, palette, x, y,
-            (flags & 0x01_u8) != 0_u8, (flags & 0x02_u8) != 0_u8,
-            (flags & 0x04_u8) != 0_u8, (flags & 0x08_u8) != 0_u8)
-        end
-      end
-
       private def read_byte(io : IO) : UInt8
         io.read_byte || raise IO::EOFError.new
       end
@@ -242,8 +179,8 @@ module Swanium
         front = nil.as(UInt16?)
         overlaps = 0
         i = 0
-        while i < @sprite_count && overlaps < 32
-          sprite = @sprites[i]
+        while i < @sprite_latch.current_count && overlaps < 32
+          sprite = @sprite_latch.current_at(i)
           dy = line &- sprite.y
           if dy < 8
             overlaps += 1
@@ -318,30 +255,6 @@ module Swanium
         (value << 8) | (value << 4) | value
       end
 
-      private def latch_sprites(wram : Bytes, ports : Bytes, target : Array(Sprite)) : Int32
-        base = (ports[0x04] & 0x3F).to_i << 9
-        first = ports[0x05].to_i
-        count = Math.min(ports[0x06].to_i, 128)
-        i = 0
-        while i < count
-          index = (first + i) & 127
-          address = base + index * 4
-          word = wram[address].to_u16 | (wram[address + 1].to_u16 << 8)
-          target[i] = Sprite.new(
-            tile: word & 0x01FF,
-            palette: ((word >> 9) & 0x07).to_u8,
-            x: wram[address + 3],
-            y: wram[address + 2],
-            priority: (word & 0x2000) != 0,
-            window: (word & 0x1000) != 0,
-            hflip: (word & 0x4000) != 0,
-            vflip: (word & 0x8000) != 0
-          )
-          i += 1
-        end
-        @sprite_count = count if target.same?(@sprites)
-        count
-      end
     end
   end
 end
