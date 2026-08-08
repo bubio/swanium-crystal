@@ -1,4 +1,5 @@
 require "./wonder_swan_sprite_latch"
+require "./wonder_swan_palette"
 
 module Swanium
   module Core
@@ -11,8 +12,6 @@ module Swanium
 
       TILE_DATA_2BPP = 0x2000
       TILE_DATA_4BPP = 0x4000
-      PALETTE_RAM    = 0xFE00
-
       getter current_line : UInt8
 
       def initialize
@@ -100,17 +99,17 @@ module Swanium
         scr2_map_base = ((ports[0x07] >> 4) & map_mask).to_i << 11
         x = 0
         while x < SCREEN_WIDTH
-          color = backdrop(wram, ports, color_mode)
+          color = WonderSwanPalette.backdrop(wram, ports, color_mode)
 
           if (display & 0x01) != 0
             pixel, palette = background_sample(wram, ports, scr1_scroll_x, scr1_bg_y, scr1_map_base, x, color_mode)
-            color = resolve(wram, ports, palette, pixel, color_mode) unless transparent?(palette, pixel, color_mode)
+            color = WonderSwanPalette.resolve(wram, ports, palette, pixel, color_mode) unless WonderSwanPalette.transparent?(palette, pixel, color_mode)
           end
 
           scr2_color = nil.as(UInt16?)
           if (display & 0x02) != 0 && scr2_visible?(ports, display, x, line)
             pixel, palette = background_sample(wram, ports, scr2_scroll_x, scr2_bg_y, scr2_map_base, x, color_mode)
-            scr2_color = resolve(wram, ports, palette, pixel, color_mode) unless transparent?(palette, pixel, color_mode)
+            scr2_color = WonderSwanPalette.resolve(wram, ports, palette, pixel, color_mode) unless WonderSwanPalette.transparent?(palette, pixel, color_mode)
           end
 
           if (display & 0x04) != 0
@@ -193,8 +192,8 @@ module Swanium
                 ty = sprite.vflip ? 7 - dy.to_i : dy.to_i
                 pixel = tile_pixel(wram, ports, sprite.tile, tx, ty, color_mode)
                 palette = sprite.palette &+ 8_u8
-                unless transparent?(palette, pixel, color_mode)
-                  color = resolve(wram, ports, palette, pixel, color_mode)
+                unless WonderSwanPalette.transparent?(palette, pixel, color_mode)
+                  color = WonderSwanPalette.resolve(wram, ports, palette, pixel, color_mode)
                   any ||= color
                   front ||= color if sprite.priority
                 end
@@ -215,44 +214,6 @@ module Swanium
       private def in_window?(ports : Bytes, x : Int32, y : UInt8, base : Int32) : Bool
         x.to_u8 >= ports[base] && x.to_u8 <= ports[base + 2] &&
           y >= ports[base + 1] && y <= ports[base + 3]
-      end
-
-      private def resolve(wram : Bytes, ports : Bytes, palette : UInt8, pixel : UInt8,
-                          color_mode : Bool) : UInt16
-        if color_mode
-          entry = ((palette & 0x0F).to_i * 16 + (pixel & 0x0F).to_i) * 2 + PALETTE_RAM
-          return (wram[entry].to_u16 | (wram[entry + 1].to_u16 << 8)) & 0x0FFF
-        end
-        address = 0x20 + (palette & 0x0F).to_i * 2 + (pixel >> 1).to_i
-        byte = ports[address]
-        pool = (pixel & 1) == 0 ? (byte & 0x07) : ((byte >> 4) & 0x07)
-        grey(shade_from_pool(ports, pool))
-      end
-
-      private def transparent?(palette : UInt8, pixel : UInt8, color_mode : Bool) : Bool
-        return false unless pixel == 0
-        return true if color_mode
-        p = palette & 0x0F
-        !((p <= 3) || (p >= 8 && p <= 11))
-      end
-
-      private def backdrop(wram : Bytes, ports : Bytes, color_mode : Bool) : UInt16
-        if color_mode
-          index = ports[0x01].to_i * 2 + PALETTE_RAM
-          (wram[index].to_u16 | (wram[index + 1].to_u16 << 8)) & 0x0FFF
-        else
-          grey(shade_from_pool(ports, ports[0x01] & 0x07))
-        end
-      end
-
-      private def shade_from_pool(ports : Bytes, index : UInt8) : UInt8
-        byte = ports[0x1C + (index >> 1).to_i]
-        (index & 1) == 0 ? (byte & 0x0F) : ((byte >> 4) & 0x0F)
-      end
-
-      private def grey(shade : UInt8) : UInt16
-        value = (15_u16 - (shade & 0x0F).to_u16)
-        (value << 8) | (value << 4) | value
       end
 
     end
