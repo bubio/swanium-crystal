@@ -1478,24 +1478,6 @@ module Swanium
         end
       end
 
-      private def execute_movsb(bus : MemoryBus) : UInt32
-        iterations = @repeat_prefix ? @registers.cx : 1_u16
-        return 1_u32 if iterations == 0_u16
-
-        source_segment = @segment_override || @registers.ds
-        iterations.times do
-          value = bus.read_u8(Core.linear_address(source_segment, @registers.si))
-          bus.write_u8(Core.linear_address(@registers.es, @registers.di), value)
-          delta = @flags.direction ? 0xFFFF_u16 : 1_u16
-          @registers.si &+= delta
-          @registers.di &+= delta
-        end
-        @registers.cx = 0_u16 if @repeat_prefix
-        total_cycles = 5_u32 * iterations.to_u32
-        mark_long_rep_interrupt_return(total_cycles)
-        total_cycles
-      end
-
       private def execute_string(bus : MemoryBus, opcode : UInt8) : UInt32
         iterations = @repeat_prefix ? @registers.cx : 1_u16
         return 0_u32 if iterations == 0_u16
@@ -1587,37 +1569,6 @@ module Swanium
 
       private def string_comparison?(opcode : UInt8) : Bool
         opcode == 0xA6_u8 || opcode == 0xA7_u8 || opcode == 0xAE_u8 || opcode == 0xAF_u8
-      end
-
-      private def execute_stosb(bus : MemoryBus) : UInt32
-        iterations = @repeat_prefix ? @registers.cx : 1_u16
-        return 1_u32 if iterations == 0_u16
-
-        delta = @flags.direction ? 0xFFFF_u16 : 1_u16
-        iterations.times do
-          bus.write_u8(Core.linear_address(@registers.es, @registers.di), @registers.reg8(0_u8))
-          @registers.di &+= delta
-        end
-        @registers.cx = 0_u16 if @repeat_prefix
-        total_cycles = 3_u32 * iterations.to_u32
-        mark_long_rep_interrupt_return(total_cycles)
-        total_cycles
-      end
-
-      private def execute_lodsb(bus : MemoryBus) : UInt32
-        iterations = @repeat_prefix ? @registers.cx : 1_u16
-        return 1_u32 if iterations == 0_u16
-
-        segment = @segment_override || @registers.ds
-        delta = @flags.direction ? 0xFFFF_u16 : 1_u16
-        iterations.times do
-          @registers.set_reg8(0_u8, bus.read_u8(Core.linear_address(segment, @registers.si)))
-          @registers.si &+= delta
-        end
-        @registers.cx = 0_u16 if @repeat_prefix
-        total_cycles = 3_u32 * iterations.to_u32
-        mark_long_rep_interrupt_return(total_cycles)
-        total_cycles
       end
 
       private def mark_long_rep_interrupt_return(total_cycles : UInt32) : Nil
