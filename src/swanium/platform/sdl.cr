@@ -191,8 +191,7 @@ module Swanium
             audio_underruns &+= 1_u32 if presented_frames > 2_u32 && queued_audio < 256_u32 && !debugger.paused
             unless debugger.paused
               bus.tick_sound(Core::Machine::CYCLES_PER_FRAME.to_u32, machine.apu)
-              queue_audio(audio_device, machine.apu.samples)
-              machine.apu.clear_samples
+              queue_audio(audio_device, machine.apu.drain_samples)
             end
             latency_ms = queued_audio * 1000_u32 // (Core::Apu::OUTPUT_SAMPLE_RATE * 4_u32)
             debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
@@ -274,8 +273,7 @@ module Swanium
           resampler = AudioResampler.new(Core::Apu::OUTPUT_SAMPLE_RATE.to_i32, obtained.freq)
           AUDIO_PREROLL_FRAMES.times do
             machine.run_wonder_swan_frame(bus)
-            queue_audio(audio_device, machine.apu.samples, resampler)
-            machine.apu.clear_samples
+            queue_audio(audio_device, machine.apu.drain_samples, resampler)
           end
           LibSDL.pause_audio_device(audio_device, 0)
 
@@ -314,8 +312,7 @@ module Swanium
               frames_run = 0
               while queued_audio < audio_target_bytes(obtained.freq) && frames_run < 4
                 machine.run_wonder_swan_frame(bus, keys)
-                queue_audio(audio_device, machine.apu.samples, resampler)
-                machine.apu.clear_samples
+                queue_audio(audio_device, machine.apu.drain_samples, resampler)
                 queued_audio = LibSDL.get_queued_audio_size(audio_device)
                 frames_run += 1
               end

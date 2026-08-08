@@ -17,8 +17,6 @@ module Swanium
         end
       end
 
-      getter samples : Array(Int16)
-
       def initialize
         @channels = StaticArray(WaveChannel, 4).new { WaveChannel.new }
         @lfsr = 0_u16
@@ -98,8 +96,19 @@ module Swanium
         ports[0x93] = 0_u8
       end
 
-      def clear_samples : Nil
-        @samples.clear
+      # Returns a copy for inspection without exposing the APU's producer
+      # buffer to callers.
+      def samples_snapshot : Array(Int16)
+        @samples.dup
+      end
+
+      # Transfers the completed PCM buffer to the audio backend and starts a
+      # fresh producer buffer. This makes consuming audio a single operation
+      # instead of relying on callers to remember a separate clear step.
+      def drain_samples : Array(Int16)
+        samples = @samples
+        @samples = Array(Int16).new(1024)
+        samples
       end
 
       def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false,

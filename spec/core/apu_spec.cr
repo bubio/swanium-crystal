@@ -8,9 +8,9 @@ describe Swanium::Core::Apu do
     ports = Bytes.new(0x100, 0_u8)
 
     apu.tick(127_u32, wram, ports)
-    apu.samples.should be_empty
+    apu.samples_snapshot.should be_empty
     apu.tick(1_u32, wram, ports, true)
-    apu.samples.should eq([0_i16, 0_i16])
+    apu.samples_snapshot.should eq([0_i16, 0_i16])
   end
 
   it "fast-forwards silent audio while keeping sample timing and output ports" do
@@ -20,11 +20,11 @@ describe Swanium::Core::Apu do
     ports[0x96] = 0xFF_u8
 
     apu.tick(127_u32, wram, ports)
-    apu.samples.should be_empty
+    apu.samples_snapshot.should be_empty
     ports[0x96].should eq(0_u8)
 
     apu.tick(1_u32, wram, ports)
-    apu.samples.should eq([0_i16, 0_i16])
+    apu.samples_snapshot.should eq([0_i16, 0_i16])
   end
 
   it "keeps a deterministic PCM hash for the audio test waveform" do
@@ -41,7 +41,8 @@ describe Swanium::Core::Apu do
     ports[0x91] = 0x80_u8
 
     apu.tick(Swanium::Core::Machine::CYCLES_PER_FRAME.to_u32, wram, ports)
-    bytes = Slice.new(apu.samples.to_unsafe.as(UInt8*), apu.samples.size * sizeof(Int16))
+    samples = apu.samples_snapshot
+    bytes = Slice.new(samples.to_unsafe.as(UInt8*), samples.size * sizeof(Int16))
     Digest::SHA256.hexdigest(bytes).should eq("bf8c81726fb908f2f73768afb2a8f629f91837daa9e5710e7c10569a6828fd87")
   end
 
@@ -60,7 +61,7 @@ describe Swanium::Core::Apu do
 
     # 128 steps wraps the 32-sample wave index to zero, whose low nibble is 1.
     # The speaker path sums the equal left/right contributions.
-    apu.samples.should eq([64_i16, 64_i16])
+    apu.samples_snapshot.should eq([64_i16, 64_i16])
   end
 
   it "updates sweep and noise state through hardware ports" do
@@ -151,12 +152,13 @@ describe Swanium::Core::Apu do
 
     apu.write_voice(0xC0_u8)
     apu.tick(128_u32, wram, ports)
-    apu.samples.should eq([2048_i16, 2048_i16])
-    apu.clear_samples
+    apu.samples_snapshot.should eq([2048_i16, 2048_i16])
+    apu.drain_samples.should eq([2048_i16, 2048_i16])
+    apu.samples_snapshot.should be_empty
 
     apu.write_voice(0xC0_u8)
     apu.tick(128_u32, wram, ports)
-    apu.samples.should eq([4096_i16, 4096_i16])
+    apu.samples_snapshot.should eq([4096_i16, 4096_i16])
   end
 
   it "matches headless APU advancement with instruction-driven machine advancement" do
@@ -170,7 +172,7 @@ describe Swanium::Core::Apu do
     direct.tick(128_u32, direct_wram, direct_ports)
     128.times { machine.step(bus) }
 
-    machine.apu.samples.should eq(direct.samples)
+    machine.apu.samples_snapshot.should eq(direct.samples_snapshot)
     machine.cycles.should eq(128_u64)
   end
 
@@ -187,7 +189,7 @@ describe Swanium::Core::Apu do
     mono.tick(128_u32, wram, ports, false)
     color.tick(128_u32, wram, ports, true)
 
-    mono.samples.should eq([0_i16, 0_i16])
-    color.samples.should eq([8192_i16, 0_i16])
+    mono.samples_snapshot.should eq([0_i16, 0_i16])
+    color.samples_snapshot.should eq([8192_i16, 0_i16])
   end
 end

@@ -236,12 +236,12 @@ describe Swanium::Core::WonderSwanBus do
     bus.write_io(0x91_u8, 0x80_u8)
 
     bus.tick_sound(128_u32, apu)
-    apu.samples.last.should eq(0_i16)
-    apu.clear_samples
+    apu.samples_snapshot.last.should eq(0_i16)
+    apu.drain_samples
 
     bus.write_io(0x60_u8, 0x80_u8)
     bus.tick_sound(128_u32, apu)
-    apu.samples[-2].should_not eq(0_i16)
+    apu.samples_snapshot[-2].should_not eq(0_i16)
   end
 
   it "clocks the Crystal noise LFSR while Color rendering is disabled" do

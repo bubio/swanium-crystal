@@ -21,7 +21,7 @@ describe Swanium::Core::SaveState do
     machine.cpu.registers.ax.should eq(0_u16)
     machine.cpu.registers.ip.should eq(1_u16)
     machine.cycles.should eq(1_u64)
-    machine.apu.samples.should eq([0_i16, 0_i16])
+    machine.apu.samples_snapshot.should eq([0_i16, 0_i16])
     bus.read_u8(7_u32).should eq(0_u8)
     bus.read_u8(0x10000_u32).should eq(0xA5_u8)
     Swanium::Core::SaveState.dump(machine, bus).should eq(saved)
