@@ -1,11 +1,10 @@
-require "./ppu"
-require "./wonder_swan_bus"
+require "../core/wonder_swan_bus"
 
 module Swanium
-  module Core
+  module Frontend
     # Copyright-free visual/input fixture used by the SDL demo and image specs.
     module VideoTestPattern
-      def self.configure(bus : WonderSwanBus) : Nil
+      def self.configure(bus : Core::WonderSwanBus) : Nil
         bus.write_io(0x60_u8, 0xE0_u8) # Color, packed 4bpp
         bus.write_io(0x07_u8, 0x00_u8)
         bus.write_io(0x00_u8, 0x05_u8) # SCR1 + sprites
@@ -79,14 +78,14 @@ module Swanium
 
       # Applies one complete input snapshot to the fixture's scroll registers.
       # Frame scheduling and rendering remain the machine's responsibility.
-      def self.apply_input(bus : WonderSwanBus, keys : UInt16 = 0_u16) : Nil
+      def self.apply_input(bus : Core::WonderSwanBus, keys : UInt16 = 0_u16) : Nil
         bus.set_keys(keys)
         horizontal = 0
-        horizontal -= 2 if (keys & WonderSwanKey::X3) != 0
-        horizontal += 2 if (keys & WonderSwanKey::X1) != 0
+        horizontal -= 2 if (keys & Core::WonderSwanKey::X3) != 0
+        horizontal += 2 if (keys & Core::WonderSwanKey::X1) != 0
         vertical = 0
-        vertical -= 2 if (keys & WonderSwanKey::X4) != 0
-        vertical += 2 if (keys & WonderSwanKey::X2) != 0
+        vertical -= 2 if (keys & Core::WonderSwanKey::X4) != 0
+        vertical += 2 if (keys & Core::WonderSwanKey::X2) != 0
         # Scroll registers wrap modulo 256. Negative directions therefore use
         # 254 (-2), not a checked signed-to-UInt8 conversion.
         bus.write_io(0x10_u8, (horizontal & 0xFF).to_u8)

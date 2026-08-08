@@ -1,4 +1,5 @@
 require "./audio_resampler"
+require "../frontend/video_test_pattern"
 
 module Swanium
   module Platform
@@ -159,7 +160,7 @@ module Swanium
           bus = Core::WonderSwanBus.new(model: Core::WonderSwanModel::Crystal)
           machine = Core::Machine.new
           debugger = Frontend::Debugger.new
-          Core::VideoTestPattern.configure(bus)
+          Frontend::VideoTestPattern.configure(bus)
           configure_audio_test(bus)
           0x10000.times { |address| bus.write_u8(address.to_u32, 0x90_u8) }
           machine.cpu.reset(0_u16, 0_u16)
@@ -188,7 +189,7 @@ module Swanium
             if debugger.paused
               debugger.run_instruction?(machine, bus)
             else
-              Core::VideoTestPattern.apply_input(bus, keys)
+              Frontend::VideoTestPattern.apply_input(bus, keys)
               machine.run_wonder_swan_frame(bus, keys)
             end
             rgba = machine.framebuffer_rgba
