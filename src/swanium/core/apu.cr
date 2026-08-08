@@ -1,4 +1,5 @@
 require "./wonder_swan_wave_generator"
+require "./pcm_sample_buffer"
 
 module Swanium
   module Core
@@ -21,7 +22,7 @@ module Swanium
         @sample_accumulator = 0_u32
         @voice_previous = 0_i32
         @voice_level = 0_i32
-        @samples = Array(Int16).new(1024)
+        @pcm = PcmSampleBuffer.new
       end
 
       def reset : Nil
@@ -35,7 +36,7 @@ module Swanium
         @sample_accumulator = 0_u32
         @voice_previous = 0_i32
         @voice_level = 0_i32
-        @samples.clear
+        @pcm.reset
       end
 
       # Channel 2 voice mode streams signed PCM through port 0x89. Games such
@@ -92,16 +93,14 @@ module Swanium
       # Returns a copy for inspection without exposing the APU's producer
       # buffer to callers.
       def samples_snapshot : Array(Int16)
-        @samples.dup
+        @pcm.snapshot
       end
 
       # Transfers the completed PCM buffer to the audio backend and starts a
       # fresh producer buffer. This makes consuming audio a single operation
       # instead of relying on callers to remember a separate clear step.
       def drain_samples : Array(Int16)
-        samples = @samples
-        @samples = Array(Int16).new(1024)
-        samples
+        @pcm.drain
       end
 
       def tick(cycles : UInt32, wram : Bytes, ports : Bytes, color_hardware : Bool = false,
@@ -139,8 +138,7 @@ module Swanium
         io.write_bytes(@sample_accumulator, IO::ByteFormat::LittleEndian)
         io.write_bytes(@voice_previous, IO::ByteFormat::LittleEndian)
         io.write_bytes(@voice_level, IO::ByteFormat::LittleEndian)
-        io.write_bytes(@samples.size.to_u32, IO::ByteFormat::LittleEndian)
-        @samples.each { |sample| io.write_bytes(sample, IO::ByteFormat::LittleEndian) }
+        @pcm.save_state(io)
       end
 
       def load_state(io : IO) : Nil
@@ -154,11 +152,7 @@ module Swanium
         @sample_accumulator = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
         @voice_previous = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
         @voice_level = io.read_bytes(Int32, IO::ByteFormat::LittleEndian)
-        sample_count = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
-        raise ArgumentError.new("invalid buffered PCM length") if sample_count > 1_000_000_u32
-        @samples = Array(Int16).new(sample_count.to_i) do
-          io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
-        end
+        @pcm.load_state(io)
       end
 
       # With every sound source disabled, the per-cycle oscillator work has no
@@ -180,7 +174,7 @@ module Swanium
         if sample_count > 0_u32
           @voice_previous = 0_i32
           @voice_level = 0_i32
-          sample_count.times { @samples << 0_i16 << 0_i16 }
+          @pcm.append_silence(sample_count)
         end
         0x96_u8.upto(0x9B_u8) { |port| ports[port] = 0_u8 }
       end
@@ -312,8 +306,10 @@ module Swanium
           left = mono
           right = mono
         end
-        @samples << left.clamp(Int16::MIN.to_i32, Int16::MAX.to_i32).to_i16
-        @samples << right.clamp(Int16::MIN.to_i32, Int16::MAX.to_i32).to_i16
+        @pcm.append_stereo(
+          left.clamp(Int16::MIN.to_i32, Int16::MAX.to_i32).to_i16,
+          right.clamp(Int16::MIN.to_i32, Int16::MAX.to_i32).to_i16
+        )
       end
 
       private def hypervoice(ports : Bytes) : Tuple(Int32, Int32)
