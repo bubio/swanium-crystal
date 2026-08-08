@@ -1,6 +1,7 @@
 require "./flags"
 require "./memory_bus"
 require "./registers"
+require "./v30_address_decoder"
 
 module Swanium
   module Core
@@ -23,31 +24,6 @@ module Swanium
       Shl
       Shr
       Sar
-    end
-
-    # Decoded ModRM operand, resolved before executing the instruction.
-    struct RegisterOrMemory
-      getter register_index : UInt8?
-      getter memory_address : UInt32?
-
-      def initialize(@register_index : UInt8? = nil, @memory_address : UInt32? = nil)
-      end
-
-      def register? : UInt8?
-        @register_index
-      end
-
-      def memory? : UInt32?
-        @memory_address
-      end
-    end
-
-    struct ModRm
-      getter reg : UInt8
-      getter operand : RegisterOrMemory
-
-      def initialize(@reg : UInt8, @operand : RegisterOrMemory)
-      end
     end
 
     struct CpuSnapshot
@@ -1182,58 +1158,16 @@ module Swanium
       end
 
       private def decode_mod_rm(bus : MemoryBus) : ModRm
-        byte = fetch_u8(bus)
-        mode = byte >> 6
-        reg = (byte >> 3) & 0x07_u8
-        rm = byte & 0x07_u8
-        return ModRm.new(reg, RegisterOrMemory.new(register_index: rm)) if mode == 3_u8
-
-        if mode == 0_u8 && rm == 6_u8
-          segment = @segment_override || @registers.ds
-          return ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(segment, fetch_u16(bus))))
-        end
-
-        base, use_stack_segment = effective_address_base(rm)
-        displacement = case mode
-                       when 0_u8 then 0_u16
-                       when 1_u8 then signed_byte(fetch_u8(bus))
-                       else           fetch_u16(bus)
-                       end
-        segment = @segment_override || (use_stack_segment ? @registers.ss : @registers.ds)
-        ModRm.new(reg, RegisterOrMemory.new(memory_address: Core.linear_address(segment, base &+ displacement)))
+        mod_rm, @registers.ip = V30AddressDecoder.decode_mod_rm(bus, @registers, @segment_override)
+        mod_rm
       end
 
       # LEA needs the raw 16-bit offset, not the segment-resolved address that
       # regular ModRM decoding returns. V30 also defines an extended register
       # mode address table used by the CPU conformance tests.
       private def decode_effective_offset(bus : MemoryBus) : Tuple(UInt8, UInt16)
-        byte = fetch_u8(bus)
-        mode = byte >> 6
-        reg = (byte >> 3) & 0x07_u8
-        rm = byte & 0x07_u8
-        return {reg, extended_register_offset(rm)} if mode == 3_u8
-        return {reg, fetch_u16(bus)} if mode == 0_u8 && rm == 6_u8
-
-        base, ignored_stack_segment = effective_address_base(rm)
-        displacement = case mode
-                       when 0_u8 then 0_u16
-                       when 1_u8 then signed_byte(fetch_u8(bus))
-                       else           fetch_u16(bus)
-                       end
-        {reg, base &+ displacement}
-      end
-
-      private def extended_register_offset(rm : UInt8) : UInt16
-        case rm & 0x07_u8
-        when 0_u8 then @registers.bx &+ @registers.ax
-        when 1_u8 then @registers.bx &+ @registers.cx
-        when 2_u8 then @registers.bp &+ @registers.dx
-        when 3_u8 then @registers.bp &+ @registers.bx
-        when 4_u8 then @registers.si &+ @registers.sp
-        when 5_u8 then @registers.di &+ @registers.bp
-        when 6_u8 then @registers.bp &+ @registers.si
-        else           @registers.bx &+ @registers.di
-        end
+        reg, offset, @registers.ip = V30AddressDecoder.decode_effective_offset(bus, @registers)
+        {reg, offset}
       end
 
       private def execute_load_far_pointer(bus : MemoryBus, es : Bool) : UInt32
@@ -1249,25 +1183,12 @@ module Swanium
                               when 2_u8, 3_u8, 6_u8 then @registers.ss
                               else                       @registers.ds
                               end
-                    Core.linear_address(segment, extended_register_offset(rm))
+                    Core.linear_address(segment, V30AddressDecoder.extended_register_offset(@registers, rm))
                   end
         @registers.set_reg16(mod_rm.reg, bus.read_u16(address))
         segment = bus.read_u16(address &+ 2_u32)
         es ? (@registers.es = segment) : (@registers.ds = segment)
         6_u32
-      end
-
-      private def effective_address_base(rm : UInt8) : Tuple(UInt16, Bool)
-        case rm
-        when 0_u8 then {@registers.bx &+ @registers.si, false}
-        when 1_u8 then {@registers.bx &+ @registers.di, false}
-        when 2_u8 then {@registers.bp &+ @registers.si, true}
-        when 3_u8 then {@registers.bp &+ @registers.di, true}
-        when 4_u8 then {@registers.si, false}
-        when 5_u8 then {@registers.di, false}
-        when 6_u8 then {@registers.bp, true}
-        else           {@registers.bx, false}
-        end
       end
 
       private def read_operand8(bus : MemoryBus, operand : RegisterOrMemory) : UInt8
