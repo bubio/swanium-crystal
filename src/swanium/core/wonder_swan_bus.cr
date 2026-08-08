@@ -2,49 +2,11 @@ require "./memory_bus"
 require "./apu"
 require "./cartridge"
 require "./rtc"
+require "./wonder_swan_hardware"
+require "./wonder_swan_interrupt_controller"
 
 module Swanium
   module Core
-    # Memory-window capability of the WonderSwan family. Color and Crystal
-    # expose all 64 KiB of internal RAM; the original model exposes 16 KiB.
-    enum WonderSwanModel
-      Mono
-      Color
-      Crystal
-
-      def color? : Bool
-        self != Mono
-      end
-    end
-
-    # Bit positions in the WonderSwan INT_CAUSE / INT_ENABLE registers.
-    # Higher-numbered sources have higher arbitration priority.
-    enum WonderSwanInterrupt : UInt8
-      SerialReceive = 0
-      KeyPress      = 1
-      Cartridge     = 2
-      DmaComplete   = 3
-      ScanlineMatch = 4
-      VBlankTimer   = 5
-      VBlank        = 6
-      HBlankTimer   = 7
-    end
-
-    # Bit layout supplied by the platform layer to the keypad matrix.
-    module WonderSwanKey
-      Y1    = 1_u16 << 0
-      Y2    = 1_u16 << 1
-      Y3    = 1_u16 << 2
-      Y4    = 1_u16 << 3
-      X1    = 1_u16 << 4
-      X2    = 1_u16 << 5
-      X3    = 1_u16 << 6
-      X4    = 1_u16 << 7
-      Start = 1_u16 << 9
-      A     = 1_u16 << 10
-      B     = 1_u16 << 11
-    end
-
     # Platform-neutral first hardware bus. It models the CPU-visible address
     # map and cartridge bank registers while PPU/APU/DMA devices are added on
     # top through the same I/O port file.
@@ -71,7 +33,6 @@ module Swanium
       getter work_ram : Bytes
       getter save_ram : Bytes
       getter ports : Bytes
-      getter keys : UInt16
       getter linear_offset : UInt8
       getter ram_bank : UInt8
       getter ram_bank_hi : UInt8
@@ -101,7 +62,7 @@ module Swanium
         @rom_bank0_hi = 0xFF_u8
         @rom_bank1 = 0xFF_u8
         @rom_bank1_hi = 0xFF_u8
-        @keys = 0_u16
+        @interrupts = WonderSwanInterruptController.new(@ports, @model)
         @voice_writes = [] of UInt8
         @sdma = SdmaState.new
         @ports[0x9E] = 0x03_u8
@@ -209,6 +170,10 @@ module Swanium
       end
 
       def read_io(port : UInt8) : UInt8
+        if value = @interrupts.read_io?(port)
+          return value
+        end
+
         # Hardware-only/read-only ports will gain device-specific handlers;
         # unknown ports intentionally retain open-bus behavior.
         case port
@@ -262,26 +227,13 @@ module Swanium
         when 0xA2_u8, 0xA3_u8                   then @ports[port] & 0x0F_u8
         when 0xAD_u8..0xAF_u8                   then 0_u8
         when 0xA0_u8                            then (@model.color? ? 0x87_u8 : 0x86_u8) | (@ports[port] & 0x08_u8)
-        when 0xB0_u8
-          @model == WonderSwanModel::Mono ? (@ports[port] & 0xF8_u8) | highest_pending_bit : @ports[port] & 0xF8_u8
-        when 0xB4_u8
-          refresh_serial_tx_irq
-          cause = @ports[port]
-          # Key, scanline and timer sources are edge-triggered and clear on
-          # INT_CAUSE reads. Serial/cartridge/DMA remain level-latched.
-          @ports[port] &= 0x0D_u8
-          cause
-        when 0xB6_u8 then 0_u8
-        when 0xB7_u8
-          value = @ports[port] & 0x10_u8
-          @ports[port] = value
-          value
-        when 0xB5_u8 then scan_keys(@ports[port] & 0x70_u8)
-        else              @ports[port]
+        else                                         @ports[port]
         end
       end
 
       def write_io(port : UInt8, value : UInt8) : Nil
+        return if @interrupts.write_io?(port, value)
+
         case port
         when 0x00_u8
           @ports[port] = value & 0x3F_u8
@@ -368,21 +320,8 @@ module Swanium
         when 0xA4_u8, 0xA5_u8, 0xA6_u8, 0xA7_u8
           @ports[port] = value
           @ports[port &+ 4_u8] = value
-        when 0xA8_u8..0xAB_u8, 0xAD_u8..0xAF_u8, 0xB1_u8, 0xB4_u8
+        when 0xA8_u8..0xAB_u8, 0xAD_u8..0xAF_u8, 0xB1_u8
           # Hardware-maintained counters and INT_CAUSE are read-only.
-        when 0xB0_u8
-          @ports[port] = value & 0xF8_u8
-        when 0xB2_u8
-          @ports[port] = value
-          refresh_serial_tx_irq
-        when 0xB3_u8
-          @ports[port] = value & 0xC4_u8
-          refresh_serial_tx_irq
-        when 0xB5_u8
-          @ports[port] = value & 0x70_u8
-        when 0xB6_u8
-          @ports[port] = value
-          @ports[0xB4] &= ~value
         else
           @ports[port] = value
         end
@@ -395,63 +334,36 @@ module Swanium
       end
 
       def request_interrupt(source : WonderSwanInterrupt) : Nil
-        @ports[0xB4] |= (1_u8 << source.value) & @ports[0xB2]
+        @interrupts.request(source)
       end
 
       # The platform layer supplies a complete input snapshot. Only a newly
       # pressed key raises the edge-triggered KeyPress source.
       def set_keys(keys : UInt16) : Nil
-        request_interrupt(WonderSwanInterrupt::KeyPress) if (keys & ~@keys) != 0_u16
-        @keys = keys
+        @interrupts.set_keys(keys)
+      end
+
+      def keys : UInt16
+        @interrupts.keys
       end
 
       def pending_interrupt_vector? : UInt8?
-        7.downto(0) do |priority|
-          return @ports[0xB0] &+ priority.to_u8 if @ports[0xB4].bit(priority) == 1
-        end
-        nil
+        @interrupts.pending_vector?
       end
 
       # Called by the LCD scheduler at the beginning of HBlank.
       def on_hblank : Nil
-        counter = read_port_u16(0xA8_u8)
-        return if counter == 0_u16
-
-        # The final count can still latch when its interrupt source is enabled,
-        # even if the HBlank timer enable bit was cleared. This hardware quirk
-        # is observable by WSHWTest and is relied upon by timer wait loops.
-        enabled = (@ports[0xA2] & 0x01_u8) != 0_u8
-        irq_enabled = (@ports[0xB2] & (1_u8 << WonderSwanInterrupt::HBlankTimer.value)) != 0_u8
-        return unless enabled || (counter == 1_u16 && irq_enabled)
-
-        if counter == 1_u16
-          request_interrupt(WonderSwanInterrupt::HBlankTimer)
-          reload = (@ports[0xA2] & 0x02_u8) == 0_u8 ? 0_u16 : read_port_u16(0xA4_u8)
-          write_counter(0xA8_u8, reload)
-        else
-          write_counter(0xA8_u8, counter - 1_u16)
-        end
+        @interrupts.on_hblank
       end
 
       # Called by the LCD scheduler on the VBlank transition.
       def on_vblank : Nil
-        request_interrupt(WonderSwanInterrupt::VBlank)
-        counter = read_port_u16(0xAA_u8)
-        return if counter == 0_u16 || (@ports[0xA2] & 0x04_u8) == 0_u8
-
-        if counter == 1_u16
-          request_interrupt(WonderSwanInterrupt::VBlankTimer)
-          reload = (@ports[0xA2] & 0x08_u8) == 0_u8 ? 0_u16 : read_port_u16(0xA6_u8)
-          write_counter(0xAA_u8, reload)
-        else
-          write_counter(0xAA_u8, counter - 1_u16)
-        end
+        @interrupts.on_vblank
       end
 
       # The display controller updates this once per 256-cycle scanline.
       def set_current_scanline(line : UInt8) : Nil
-        @ports[0x02] = line
-        request_interrupt(WonderSwanInterrupt::ScanlineMatch) if line == @ports[0x03]
+        @interrupts.set_current_scanline(line)
       end
 
       def restore_state(work_ram : Bytes, save_ram : Bytes, ports : Bytes, keys : UInt16,
@@ -462,7 +374,7 @@ module Swanium
         @work_ram.copy_from(work_ram)
         @save_ram.copy_from(save_ram)
         @ports.copy_from(ports)
-        @keys = keys
+        @interrupts.restore_keys(keys)
         @linear_offset = linear_offset
         @ram_bank = ram_bank
         @ram_bank_hi = ram_bank_hi
@@ -718,38 +630,9 @@ module Swanium
         @ports[port].to_u16 | (@ports[port &+ 1_u8].to_u16 << 8)
       end
 
-      private def write_counter(port : UInt8, value : UInt16) : Nil
-        @ports[port] = (value & 0x00FF_u16).to_u8
-        @ports[port &+ 1_u8] = (value >> 8).to_u8
-      end
-
       private def write_port_u16(port : UInt8, value : UInt16) : Nil
         @ports[port] = (value & 0x00FF_u16).to_u8
         @ports[port &+ 1_u8] = (value >> 8).to_u8
-      end
-
-      private def scan_keys(selector : UInt8) : UInt8
-        result = selector
-        result |= (@keys & 0x000F_u16).to_u8 if (selector & 0x10_u8) != 0_u8
-        result |= ((@keys >> 4) & 0x000F_u16).to_u8 if (selector & 0x20_u8) != 0_u8
-        result |= ((@keys >> 8) & 0x000F_u16).to_u8 if (selector & 0x40_u8) != 0_u8
-        result
-      end
-
-      private def highest_pending_bit : UInt8
-        7.downto(0) do |priority|
-          return priority.to_u8 if @ports[0xB4].bit(priority) == 1
-        end
-        0_u8
-      end
-
-      # Mono UART TX-ready is level-triggered: enabling both the UART and
-      # IRQ-0 immediately asserts it, ACK cannot clear it while that level is
-      # active.  Color/Crystal hardware does not expose this Mono-only level.
-      private def refresh_serial_tx_irq : Nil
-        if @model == WonderSwanModel::Mono && (@ports[0xB2] & 0x01_u8) != 0_u8 && (@ports[0xB3] & 0x80_u8) != 0_u8
-          @ports[0xB4] |= 0x01_u8
-        end
       end
 
       private def color_rendering_enabled? : Bool
