@@ -18,8 +18,13 @@ module Swanium
         @volume = 100
         @quit_requested = false
         @pause_requested = false
+        @save_state_requested = false
+        @load_state_requested = false
 
         file = UIng::Menu.new("File")
+        file.append_item("Save State").on_clicked { |_| @save_state_requested = true }
+        file.append_item("Load State").on_clicked { |_| @load_state_requested = true }
+        file.append_separator
         file.append_quit_item.on_clicked { |_| @quit_requested = true }
         emulation = UIng::Menu.new("Emulation")
         emulation.append_item("Pause / Resume").on_clicked { |_| @pause_requested = true }
@@ -55,6 +60,18 @@ module Swanium
       def take_pause_request? : Bool
         requested = @pause_requested
         @pause_requested = false
+        requested
+      end
+
+      def take_save_state_request? : Bool
+        requested = @save_state_requested
+        @save_state_requested = false
+        requested
+      end
+
+      def take_load_state_request? : Bool
+        requested = @load_state_requested
+        @load_state_requested = false
         requested
       end
 

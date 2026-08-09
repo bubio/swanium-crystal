@@ -195,6 +195,11 @@ module Swanium
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
             end
+            StateStore.default.save(machine, bus, "demo") if controls.take_save_state_request?
+            if controls.take_load_state_request?
+              StateStore.default.load(machine, bus, "demo")
+              LibSDL.clear_queued_audio(audio_device)
+            end
             keys, escape = input_state(controller)
             running = false if escape
             if debugger.paused
@@ -331,6 +336,11 @@ module Swanium
             if controls.take_pause_request?
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
+            end
+            StateStore.default.save(machine, bus, title) if controls.take_save_state_request?
+            if controls.take_load_state_request?
+              StateStore.default.load(machine, bus, title)
+              LibSDL.clear_queued_audio(audio_device)
             end
             keys, escape = input_state(controller)
             # The display rotates left, so host directions need the opposite

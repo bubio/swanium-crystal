@@ -19,7 +19,7 @@ SDL2 の導入確認には、デスクトップ環境で `mise run sdl-smoke` �
 ./bin/swanium-crystal --rom /path/to/game.wsc
 ```
 
-Escape で終了します。矢印キーがX方向パッド（↑→↓←）、WASDがY方向パッド（WDSA）、X/ZがA/B、ReturnがStartです。これは元Swaniumと同じ初期割り当てです。F5/F9はROMごとのステート保存・復元です。ネイティブのコントロールウィンドウにはROM名、FPS、音量スライダーがあり、メニューから停止・再開できます。`--headless-frames COUNT` を付けると画面を開かずに起動後の実行を確認できます。
+Escape で終了します。矢印キーがX方向パッド（↑→↓←）、WASDがY方向パッド（WDSA）、X/ZがA/B、ReturnがStartです。これは元Swaniumと同じ初期割り当てです。F5/F9はROMごとのステート保存・復元です。ネイティブのコントロールウィンドウにはROM名、FPS、音量スライダーがあり、メニューから停止・再開とステート保存・復元ができます。`--headless-frames COUNT` を付けると画面を開かずに起動後の実行を確認できます。
 
 画面と入力の自作検証プログラムは次のコマンドで起動し、Escapeまたはウィンドウを閉じると終了します。
 
