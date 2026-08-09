@@ -11,3 +11,7 @@ targets:
 crystal: ">= 1.18.2"
 
 license: MIT
+
+dependencies:
+  uing:
+    github: kojix2/uing
