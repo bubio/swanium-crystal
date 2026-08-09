@@ -20,8 +20,13 @@ module Swanium
         @pause_requested = false
         @save_state_requested = false
         @load_state_requested = false
+        @open_rom_path = nil.as(String?)
 
         file = UIng::Menu.new("File")
+        file.append_item("Open ROM…").on_clicked do |window|
+          @open_rom_path = window.open_file
+        end
+        file.append_separator
         file.append_item("Save State").on_clicked { |_| @save_state_requested = true }
         file.append_item("Load State").on_clicked { |_| @load_state_requested = true }
         file.append_separator
@@ -61,6 +66,12 @@ module Swanium
         requested = @pause_requested
         @pause_requested = false
         requested
+      end
+
+      def take_open_rom_path : String?
+        path = @open_rom_path
+        @open_rom_path = nil
+        path
       end
 
       def take_save_state_request? : Bool

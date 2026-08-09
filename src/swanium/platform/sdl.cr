@@ -254,7 +254,9 @@ module Swanium
       # Run one explicitly selected local cartridge. File loading and filename
       # handling stay in the application layer; this method receives only
       # validated bytes and a display/save label.
-      def self.play(cartridge : Core::CartridgeImage, title : String) : Nil
+      # Returns a newly selected ROM path when the native File > Open ROM…
+      # action asks the application layer to replace the current cartridge.
+      def self.play(cartridge : Core::CartridgeImage, title : String) : String?
         controls = Frontend::NativeControls.start(title)
         if LibSDL.init(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
           controls.close
@@ -266,6 +268,7 @@ module Swanium
         texture = Pointer(Void).null
         controller = Pointer(Void).null
         audio_device = 0_u32
+        opened_rom_path = nil.as(String?)
         bus = Core::WonderSwanBus.from_cartridge(cartridge)
         machine = Core::Machine.new
         machine.cpu.reset(0xFFFF_u16, 0_u16)
@@ -333,6 +336,11 @@ module Swanium
               end
             end
             controls.pump
+            if path = controls.take_open_rom_path
+              opened_rom_path = path
+              running = false
+              next
+            end
             if controls.take_pause_request?
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
@@ -404,6 +412,7 @@ module Swanium
           LibSDL.quit
           controls.close
         end
+        opened_rom_path
       end
 
       def self.smoke_test : Nil

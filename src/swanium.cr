@@ -42,12 +42,12 @@ module Swanium
     elsif rom_path && (video_demo || sdl_smoke)
       raise ArgumentError.new("--rom cannot be combined with --video-demo or --sdl-smoke")
     elsif path = rom_path
-      extension = File.extname(path).downcase
-      raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
-      rom = File.read(path).to_slice
-      cartridge = Core::CartridgeImage.from_bytes(rom)
-      title = File.basename(path)
       if frames = headless_frames
+        extension = File.extname(path).downcase
+        raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
+        rom = File.read(path).to_slice
+        cartridge = Core::CartridgeImage.from_bytes(rom)
+        title = File.basename(path)
         bus = Core::WonderSwanBus.from_cartridge(cartridge)
         machine = Core::Machine.new
         machine.cpu.reset(0xFFFF_u16, 0_u16)
@@ -59,7 +59,16 @@ module Swanium
         end
         puts "#{title}: completed #{frames} headless frame(s)"
       else
-        Platform::Sdl.play(cartridge, title)
+        current_path = path
+        loop do
+          extension = File.extname(current_path).downcase
+          raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
+          cartridge = Core::CartridgeImage.from_bytes(File.read(current_path).to_slice)
+          title = File.basename(current_path)
+          next_path = Platform::Sdl.play(cartridge, title)
+          break unless next_path
+          current_path = next_path
+        end
       end
     elsif video_demo
       Platform::Sdl.video_demo
