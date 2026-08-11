@@ -11,8 +11,9 @@
 - `Pause`: エミュレーションの停止と再開を切り替える。
 - `Reset`: 現在のROMをリセットする。
 - `Scale`: 1xから4xを選ぶサブメニュー。
-- `Rotation`: 通常・左回転・右回転を選ぶサブメニュー。
 - `Renderer`: Nearest NeighborとBilinearを選ぶサブメニュー。
+
+画面の向きはROMヘッダーの縦持ち／横持ち情報から自動決定する。手動回転は提供しない。
 
 ## macOS
 
@@ -36,7 +37,6 @@ Emulation         Open ROM…
 
 View              Scale ▶
                   Fullscreen
-                  Rotation ▶
                   Renderer ▶
 ```
 
@@ -60,7 +60,6 @@ Emulation         Pause
 
 View              Scale ▶
                   Fullscreen
-                  Rotation ▶
                   Renderer ▶
 
 Help              About Swanium Crystal…
@@ -85,7 +84,6 @@ Emulation         Pause
 
 View              Scale ▶
                   Fullscreen
-                  Rotation ▶
                   Renderer ▶
 
 Help              About Swanium Crystal…

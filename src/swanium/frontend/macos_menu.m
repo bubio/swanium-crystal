@@ -78,10 +78,6 @@ void swanium_macos_menu_build(void) {
   [view addItem:scale_root];
   [view addItem:item(@"Fullscreen", 20)];
   [view addItem:[NSMenuItem separatorItem]];
-  NSMenuItem *rotation = [[NSMenuItem alloc] initWithTitle:@"Rotation" action:nil keyEquivalent:@""];
-  rotation.enabled = NO;
-  [view addItem:rotation];
-  [view addItem:[NSMenuItem separatorItem]];
   NSMenu *renderer = submenu(@"Renderer");
   [renderer addItem:item(@"Nearest Neighbor", 31)];
   [renderer addItem:item(@"Bilinear", 32)];
