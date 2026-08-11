@@ -29,11 +29,11 @@ depends = ["spec"]
 
 [tasks.build]
 description = "Build the optimized macOS application"
-run = "mkdir -p bin && crystal build --release --no-debug --link-flags '-Wl,-headerpad_max_install_names' src/swanium.cr -o bin/swanium-crystal && sh tools/relink_macos_sdl.sh bin/swanium-crystal"
+run = "mkdir -p bin && sh tools/build_macos_menu.sh bin/macos_menu.o && crystal build --release --no-debug --link-flags \"$(pwd)/bin/macos_menu.o -framework Cocoa -Wl,-headerpad_max_install_names\" src/swanium.cr -o bin/swanium-crystal && sh tools/relink_macos_sdl.sh bin/swanium-crystal"
 
 [tasks.build-debug]
 description = "Build an unoptimized binary for debugger work"
-run = "mkdir -p bin && crystal build --link-flags '-Wl,-headerpad_max_install_names' src/swanium.cr -o bin/swanium-crystal-debug && sh tools/relink_macos_sdl.sh bin/swanium-crystal-debug"
+run = "mkdir -p bin && sh tools/build_macos_menu.sh bin/macos_menu.o && crystal build --link-flags \"$(pwd)/bin/macos_menu.o -framework Cocoa -Wl,-headerpad_max_install_names\" src/swanium.cr -o bin/swanium-crystal-debug && sh tools/relink_macos_sdl.sh bin/swanium-crystal-debug"
 
 [tasks.ci]
 description = "Run the repository CI suite with self-contained fixtures only"

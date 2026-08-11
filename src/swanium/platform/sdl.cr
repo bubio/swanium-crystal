@@ -15,6 +15,7 @@ module Swanium
       INIT_AUDIO                 = 0x00000010_u32
       INIT_GAMECONTROLLER        = 0x00002000_u32
       WINDOW_SHOWN               = 0x00000004_u32
+      WINDOW_FULLSCREEN_DESKTOP  = 0x00001001_u32
       RENDERER_ACCELERATED       = 0x00000002_u32
       RENDERER_PRESENTVSYNC      = 0x00000004_u32
       TEXTUREACCESS_STREAMING    =              1
@@ -90,11 +91,14 @@ module Swanium
         fun get_error = SDL_GetError : LibC::Char*
         fun create_window = SDL_CreateWindow(title : LibC::Char*, x : Int32, y : Int32, width : Int32, height : Int32, flags : UInt32) : Void*
         fun destroy_window = SDL_DestroyWindow(window : Void*) : Nil
+        fun set_window_size = SDL_SetWindowSize(window : Void*, width : Int32, height : Int32) : Nil
+        fun set_window_fullscreen = SDL_SetWindowFullscreen(window : Void*, flags : UInt32) : Int32
         fun create_renderer = SDL_CreateRenderer(window : Void*, index : Int32, flags : UInt32) : Void*
         fun destroy_renderer = SDL_DestroyRenderer(renderer : Void*) : Nil
         fun render_set_logical_size = SDL_RenderSetLogicalSize(renderer : Void*, width : Int32, height : Int32) : Int32
         fun create_texture = SDL_CreateTexture(renderer : Void*, format : UInt32, access : Int32, width : Int32, height : Int32) : Void*
         fun destroy_texture = SDL_DestroyTexture(texture : Void*) : Nil
+        fun set_texture_scale_mode = SDL_SetTextureScaleMode(texture : Void*, scale_mode : Int32) : Int32
         fun update_texture = SDL_UpdateTexture(texture : Void*, rect : Void*, pixels : Void*, pitch : Int32) : Int32
         fun render_clear = SDL_RenderClear(renderer : Void*) : Int32
         fun render_copy = SDL_RenderCopy(renderer : Void*, texture : Void*, source : Void*, destination : Void*) : Int32
@@ -177,6 +181,7 @@ module Swanium
           fps = 60.0
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
+          fullscreen = false
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -195,9 +200,25 @@ module Swanium
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
             end
-            StateStore.default.save(machine, bus, "demo") if controls.take_save_state_request?
-            if controls.take_load_state_request?
-              StateStore.default.load(machine, bus, "demo")
+            if controls.take_reset_request?
+              machine.cpu.reset(0_u16, 0_u16)
+              LibSDL.clear_queued_audio(audio_device)
+            end
+            if scale = controls.take_scale_request
+              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale)
+            end
+            if controls.take_fullscreen_request?
+              fullscreen = !fullscreen
+              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+            end
+            if renderer_mode = controls.take_renderer_request
+              check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
+            end
+            if slot = controls.take_save_state_request
+              StateStore.default.save(machine, bus, "demo", slot)
+            end
+            if slot = controls.take_load_state_request
+              StateStore.default.load(machine, bus, "demo", slot)
               LibSDL.clear_queued_audio(audio_device)
             end
             keys, escape = input_state(controller)
@@ -322,6 +343,7 @@ module Swanium
           fps = 60.0
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
+          fullscreen = false
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -345,9 +367,25 @@ module Swanium
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
             end
-            StateStore.default.save(machine, bus, title) if controls.take_save_state_request?
-            if controls.take_load_state_request?
-              StateStore.default.load(machine, bus, title)
+            if controls.take_reset_request?
+              machine.cpu.reset(0xFFFF_u16, 0_u16)
+              LibSDL.clear_queued_audio(audio_device)
+            end
+            if scale = controls.take_scale_request
+              LibSDL.set_window_size(window, display_width * scale, display_height * scale)
+            end
+            if controls.take_fullscreen_request?
+              fullscreen = !fullscreen
+              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+            end
+            if renderer_mode = controls.take_renderer_request
+              check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
+            end
+            if slot = controls.take_save_state_request
+              StateStore.default.save(machine, bus, title, slot)
+            end
+            if slot = controls.take_load_state_request
+              StateStore.default.load(machine, bus, title, slot)
               LibSDL.clear_queued_audio(audio_device)
             end
             keys, escape = input_state(controller)

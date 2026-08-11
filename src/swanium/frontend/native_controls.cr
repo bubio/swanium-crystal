@@ -1,4 +1,5 @@
 require "uing"
+require "./macos_menu"
 
 module Swanium
   module Frontend
@@ -18,21 +19,21 @@ module Swanium
         @volume = 100
         @quit_requested = false
         @pause_requested = false
-        @save_state_requested = false
-        @load_state_requested = false
+        @save_state_requested = nil.as(Int32?)
+        @load_state_requested = nil.as(Int32?)
         @open_rom_path = nil.as(String?)
+        @settings_window = nil.as(UIng::Window?)
+        @reset_requested = false
+        @scale_requested = nil.as(Int32?)
+        @fullscreen_requested = false
+        @renderer_requested = nil.as(Int32?)
 
-        file = UIng::Menu.new("File")
-        file.append_item("Open ROM…").on_clicked do |window|
-          @open_rom_path = window.open_file
+        application = UIng::Menu.new("Swanium Crystal")
+        application.append_about_item.on_clicked do |window|
+          window.msg_box("About Swanium Crystal", "WonderSwan and WonderSwan Color emulator.")
         end
-        file.append_separator
-        file.append_item("Save State").on_clicked { |_| @save_state_requested = true }
-        file.append_item("Load State").on_clicked { |_| @load_state_requested = true }
-        file.append_separator
-        file.append_quit_item.on_clicked { |_| @quit_requested = true }
-        emulation = UIng::Menu.new("Emulation")
-        emulation.append_item("Pause / Resume").on_clicked { |_| @pause_requested = true }
+        application.append_preferences_item.on_clicked { |_| show_settings }
+        application.append_quit_item.on_clicked { |_| @quit_requested = true }
 
         @status = UIng::Label.new("#{title} — starting…")
         @volume_label = UIng::Label.new("Volume: 100%")
@@ -55,11 +56,39 @@ module Swanium
           false
         end
         @window.show
+        MacosMenu.install
         UIng.main_steps
       end
 
       def pump : Nil
         UIng.main_step(false)
+        action = MacosMenu.take_action
+        case action
+        when MacosMenu::OPEN_ROM
+          @open_rom_path = @window.open_file
+        when MacosMenu::SAVE_STATE_BASE..(MacosMenu::SAVE_STATE_BASE + 9)
+          @save_state_requested = action - MacosMenu::SAVE_STATE_BASE
+        when MacosMenu::LOAD_STATE_BASE..(MacosMenu::LOAD_STATE_BASE + 9)
+          @load_state_requested = action - MacosMenu::LOAD_STATE_BASE
+        when MacosMenu::PAUSE
+          @pause_requested = true
+        when MacosMenu::RESET
+          @reset_requested = true
+        when MacosMenu::SCALE_1
+          @scale_requested = 1
+        when MacosMenu::SCALE_2
+          @scale_requested = 2
+        when MacosMenu::SCALE_3
+          @scale_requested = 3
+        when MacosMenu::SCALE_4
+          @scale_requested = 4
+        when MacosMenu::FULLSCREEN
+          @fullscreen_requested = true
+        when MacosMenu::RENDER_NEAREST
+          @renderer_requested = 0
+        when MacosMenu::RENDER_LINEAR
+          @renderer_requested = 1
+        end
       end
 
       def take_pause_request? : Bool
@@ -74,16 +103,40 @@ module Swanium
         path
       end
 
-      def take_save_state_request? : Bool
-        requested = @save_state_requested
-        @save_state_requested = false
+      def take_save_state_request : Int32?
+        slot = @save_state_requested
+        @save_state_requested = nil
+        slot
+      end
+
+      def take_load_state_request : Int32?
+        slot = @load_state_requested
+        @load_state_requested = nil
+        slot
+      end
+
+      def take_reset_request? : Bool
+        requested = @reset_requested
+        @reset_requested = false
         requested
       end
 
-      def take_load_state_request? : Bool
-        requested = @load_state_requested
-        @load_state_requested = false
+      def take_scale_request : Int32?
+        scale = @scale_requested
+        @scale_requested = nil
+        scale
+      end
+
+      def take_fullscreen_request? : Bool
+        requested = @fullscreen_requested
+        @fullscreen_requested = false
         requested
+      end
+
+      def take_renderer_request : Int32?
+        renderer = @renderer_requested
+        @renderer_requested = nil
+        renderer
       end
 
       def update_status(title : String, fps : Float64, paused : Bool) : Nil
@@ -92,8 +145,28 @@ module Swanium
       end
 
       def close : Nil
+        @settings_window.try do |window|
+          window.destroy unless window.released?
+        end
         @window.destroy unless @window.released?
         UIng.uninit
+      end
+
+      private def show_settings : Nil
+        if window = @settings_window
+          window.show
+          return
+        end
+
+        bindings = UIng::Label.new("Input bindings\n\nX pad: Arrow keys\nY pad: W / A / S / D\nA / B: X / Z\nStart: Return")
+        window = UIng::Window.new("Swanium Crystal Settings", 330, 180, margined: true)
+        window.child = bindings
+        window.on_closing do
+          @settings_window = nil
+          true
+        end
+        @settings_window = window
+        window.show
       end
     end
   end
