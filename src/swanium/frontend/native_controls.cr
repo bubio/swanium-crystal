@@ -5,7 +5,7 @@ module Swanium
   module Frontend
     # Native controls are deliberately kept outside SDL. SDL continues to
     # own the low-latency screen, keyboard/gamepad, and audio paths, while
-    # libui-ng/AppKit supplies accessible text, menus, and sliders.
+    # libui-ng/AppKit supplies the application menu and native status bar.
     class NativeControls
       getter quit_requested : Bool
 
@@ -15,7 +15,6 @@ module Swanium
       end
 
       def initialize(title : String)
-        @volume = 100
         @quit_requested = false
         @pause_requested = false
         @save_state_requested = nil.as(Int32?)
@@ -40,20 +39,9 @@ module Swanium
           false
         end
 
-        @status = UIng::Label.new("#{title} — starting…")
-        @volume_label = UIng::Label.new("Volume: 100%")
-        slider = UIng::Slider.new(0, 100, @volume)
-        slider.on_changed do |value|
-          @volume = value.clamp(0, 100)
-          @volume_label.text = "Volume: #{@volume}%"
-        end
-        controls = UIng::Box.new(:vertical, padded: true)
-        controls.append(@status)
-        controls.append(@volume_label)
-        controls.append(slider)
-
-        @window = UIng::Window.new("Swanium Crystal", 360, 110, menubar: true, margined: true)
-        @window.child = controls
+        # UIng needs a window to establish the process-wide menu bar. It is
+        # only a host: the SDL window contains all visible emulator controls.
+        @window = UIng::Window.new("Swanium Crystal", 1, 1, menubar: true)
         @window.on_closing do
           # Destruction from inside libui's close delegate is unsafe on
           # macOS. The owning frontend performs it after its loop unwinds.
@@ -65,6 +53,7 @@ module Swanium
         # libui-ng needs this host menu to create its application-menu items,
         # but the host itself must not remain as a second top-level menu.
         MacosMenu.hide_libui_menu
+        @window.hide
         UIng.main_steps
       end
 
@@ -149,7 +138,6 @@ module Swanium
 
       def update_status(title : String, fps : Float64, paused : Bool) : Nil
         suffix = paused ? "paused" : "#{fps.round.to_i} fps"
-        @status.text = "#{title} — #{suffix}"
         MacosMenu.update_status("#{title} — #{suffix}")
       end
 
