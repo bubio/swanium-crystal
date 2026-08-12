@@ -136,16 +136,8 @@ void swanium_macos_status_attach(void *native_window) {
   NSWindow *window = (__bridge NSWindow *)native_window;
   NSView *content = window.contentView;
   if (content == nil || status_label != nil) return;
-  NSView *sdl_view = content.subviews.firstObject;
   const CGFloat height = 26.0;
   NSRect frame = content.bounds;
-  // SDL's Cocoa backend normally installs a child view. Older SDL builds
-  // may make that view the content view itself; in that case the footer is
-  // still a native overlay rather than silently disappearing.
-  if (sdl_view != nil) {
-    sdl_view.frame = NSMakeRect(0, height, frame.size.width, frame.size.height - height);
-    sdl_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-  }
   NSVisualEffectView *footer = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, height)];
   footer.material = NSVisualEffectMaterialSidebar;
   footer.blendingMode = NSVisualEffectBlendingModeWithinWindow;
@@ -184,4 +176,12 @@ void swanium_macos_status_update(const char *text) {
 
 int swanium_macos_status_volume(void) {
   return status_volume == nil ? 100 : (int)status_volume.integerValue;
+}
+
+int swanium_macos_status_reserved_height_pixels(void *sdl_window) {
+  SDL_SysWMinfo info;
+  SDL_VERSION(&info.version);
+  if (SDL_GetWindowWMInfo((SDL_Window *)sdl_window, &info) == SDL_FALSE) return 0;
+  // Reserve an 8 pt visual divider above the 26 pt native footer.
+  return (int)lround(34.0 * info.info.cocoa.window.backingScaleFactor);
 }

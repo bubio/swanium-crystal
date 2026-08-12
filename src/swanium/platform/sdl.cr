@@ -56,6 +56,13 @@ module Swanium
 
       @[Link("SDL2")]
       lib LibSDL
+        struct Rect
+          x : Int32
+          y : Int32
+          w : Int32
+          h : Int32
+        end
+
         struct Event
           type : UInt32
           padding : StaticArray(UInt8, 52)
@@ -95,13 +102,13 @@ module Swanium
         fun set_window_fullscreen = SDL_SetWindowFullscreen(window : Void*, flags : UInt32) : Int32
         fun create_renderer = SDL_CreateRenderer(window : Void*, index : Int32, flags : UInt32) : Void*
         fun destroy_renderer = SDL_DestroyRenderer(renderer : Void*) : Nil
-        fun render_set_logical_size = SDL_RenderSetLogicalSize(renderer : Void*, width : Int32, height : Int32) : Int32
         fun create_texture = SDL_CreateTexture(renderer : Void*, format : UInt32, access : Int32, width : Int32, height : Int32) : Void*
         fun destroy_texture = SDL_DestroyTexture(texture : Void*) : Nil
         fun set_texture_scale_mode = SDL_SetTextureScaleMode(texture : Void*, scale_mode : Int32) : Int32
         fun update_texture = SDL_UpdateTexture(texture : Void*, rect : Void*, pixels : Void*, pitch : Int32) : Int32
         fun render_clear = SDL_RenderClear(renderer : Void*) : Int32
         fun render_copy = SDL_RenderCopy(renderer : Void*, texture : Void*, source : Void*, destination : Void*) : Int32
+        fun get_renderer_output_size = SDL_GetRendererOutputSize(renderer : Void*, width : Int32*, height : Int32*) : Int32
         fun render_present = SDL_RenderPresent(renderer : Void*) : Nil
         fun poll_event = SDL_PollEvent(event : Event*) : Int32
         fun get_keyboard_state = SDL_GetKeyboardState(count : Int32*) : UInt8*
@@ -148,7 +155,6 @@ module Swanium
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
-          check(LibSDL.render_set_logical_size(renderer, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT))
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
             Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
           raise SdlError.new(error_message) if texture.null?
@@ -252,7 +258,7 @@ module Swanium
             controls.update_status("Video demo", fps, debugger.paused)
             check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
             check(LibSDL.render_clear(renderer))
-            check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
+            render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
             LibSDL.render_present(renderer)
             presented_frames &+= 1_u32
             # Cap presentation to 60 Hz even on 120 Hz ProMotion displays and
@@ -313,7 +319,6 @@ module Swanium
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
-          check(LibSDL.render_set_logical_size(renderer, display_width, display_height))
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
             display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
@@ -437,7 +442,7 @@ module Swanium
             controls.update_status(title, fps, debugger.paused)
             check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
             check(LibSDL.render_clear(renderer))
-            check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, Pointer(Void).null))
+            render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
             LibSDL.render_present(renderer)
             presented_frames &+= 1_u32
             next_frame &+= frame_ticks
@@ -495,6 +500,23 @@ module Swanium
 
       private def self.check(result : Int32) : Nil
         raise SdlError.new(error_message) if result != 0
+      end
+
+      private def self.render_game(renderer : Void*, texture : Void*, game_width : Int32, game_height : Int32, reserved_status_height : Int32) : Nil
+        output_width = 0
+        output_height = 0
+        check(LibSDL.get_renderer_output_size(renderer, pointerof(output_width), pointerof(output_height)))
+        available_height = {output_height - reserved_status_height, 1}.max
+        scale = {output_width.to_f64 / game_width, available_height.to_f64 / game_height}.min
+        width = (game_width * scale).round.to_i
+        height = (game_height * scale).round.to_i
+        destination = LibSDL::Rect.new(
+          x: (output_width - width) // 2,
+          y: (available_height - height) // 2,
+          w: width,
+          h: height
+        )
+        check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, pointerof(destination).as(Void*)))
       end
 
       private def self.first_controller : Void*

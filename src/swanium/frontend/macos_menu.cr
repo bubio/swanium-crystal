@@ -8,6 +8,7 @@ lib LibMacOSMenu
   fun attach_status = swanium_macos_status_attach_sdl_window(window : Void*) : Nil
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
   fun status_volume = swanium_macos_status_volume : Int32
+  fun status_reserved_height = swanium_macos_status_reserved_height_pixels(window : Void*) : Int32
 end
 
 module Swanium
@@ -57,6 +58,10 @@ module Swanium
 
       def self.volume : Int32
         LibMacOSMenu.status_volume
+      end
+
+      def self.reserved_status_height(window : Void*) : Int32
+        LibMacOSMenu.status_reserved_height(window)
       end
     end
   end

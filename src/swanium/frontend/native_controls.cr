@@ -128,6 +128,10 @@ module Swanium
         MacosMenu.volume
       end
 
+      def reserved_status_height(window : Void*) : Int32
+        MacosMenu.reserved_status_height(window)
+      end
+
       def close : Nil
         @settings_window.try do |window|
           window.destroy unless window.released?
