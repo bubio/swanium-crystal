@@ -26,8 +26,11 @@ module Swanium
         @fullscreen_requested = false
         @renderer_requested = nil.as(Int32?)
 
-        MacosMenu.install
         UIng.main_steps
+      end
+
+      def install_menus : Nil
+        MacosMenu.install
       end
 
       def pump : Nil

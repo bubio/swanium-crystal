@@ -152,6 +152,7 @@ module Swanium
             WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
+          controls.install_menus
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
@@ -316,6 +317,7 @@ module Swanium
             display_width * 3, display_height * 3 + 26, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
+          controls.install_menus
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?

@@ -49,7 +49,13 @@ void swanium_macos_menu_build(void) {
   }
   if ([bar itemWithTitle:@"Emulation"] != nil) return;
 
-  NSMenu *application = submenu(@"Swanium Crystal");
+  NSMenuItem *application_root = [bar itemAtIndex:0];
+  if (application_root == nil) {
+    application_root = [[NSMenuItem alloc] initWithTitle:@"Swanium Crystal" action:nil keyEquivalent:@""];
+    [bar insertItem:application_root atIndex:0];
+  }
+  NSMenu *application = submenu(application_root.title);
+  application_root.submenu = application;
   [application addItem:item(@"About Swanium Crystal", 41)];
   [application addItem:[NSMenuItem separatorItem]];
   NSMenuItem *settings = item(@"Settings…", 42);
@@ -59,8 +65,6 @@ void swanium_macos_menu_build(void) {
   NSMenuItem *quit = item(@"Quit Swanium Crystal", 43);
   quit.keyEquivalent = @"q";
   [application addItem:quit];
-  add_top_level(bar, @"Swanium Crystal", application);
-
   NSMenu *emulation = submenu(@"Emulation");
   [emulation addItem:item(@"Open ROM…", 1)];
   NSMenu *recent = submenu(@"Open Recent");
