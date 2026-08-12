@@ -1,6 +1,8 @@
 #import <Cocoa/Cocoa.h>
 
 static int pending_action = 0;
+static NSTextField *status_label = nil;
+static NSSlider *status_volume = nil;
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -91,4 +93,57 @@ int swanium_macos_menu_take_action(void) {
   int action = pending_action;
   pending_action = 0;
   return action;
+}
+
+void swanium_macos_menu_hide(void) {
+  NSMenu *bar = NSApp.mainMenu;
+  NSMenuItem *host = [bar itemWithTitle:@"Swanium Crystal"];
+  if (host != nil) host.hidden = YES;
+}
+
+void swanium_macos_status_attach(void *native_window) {
+  NSWindow *window = (__bridge NSWindow *)native_window;
+  NSView *content = window.contentView;
+  if (content == nil || status_label != nil) return;
+  NSView *sdl_view = content.subviews.firstObject;
+  const CGFloat height = 26.0;
+  NSRect frame = content.bounds;
+  // SDL's Cocoa backend normally installs a child view. Older SDL builds
+  // may make that view the content view itself; in that case the footer is
+  // still a native overlay rather than silently disappearing.
+  if (sdl_view != nil) {
+    sdl_view.frame = NSMakeRect(0, height, frame.size.width, frame.size.height - height);
+    sdl_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  }
+  NSVisualEffectView *footer = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, height)];
+  footer.material = NSVisualEffectMaterialSidebar;
+  footer.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+  footer.state = NSVisualEffectStateActive;
+  footer.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+  status_label = [NSTextField labelWithString:@"Starting…"];
+  status_label.frame = NSMakeRect(10, 5, frame.size.width - 145, 17);
+  status_label.font = [NSFont systemFontOfSize:12];
+  status_label.lineBreakMode = NSLineBreakByTruncatingMiddle;
+  status_label.autoresizingMask = NSViewWidthSizable;
+  [footer addSubview:status_label];
+  NSTextField *volume_label = [NSTextField labelWithString:@"Volume"];
+  volume_label.frame = NSMakeRect(frame.size.width - 130, 5, 48, 17);
+  volume_label.font = [NSFont systemFontOfSize:12];
+  volume_label.autoresizingMask = NSViewMinXMargin;
+  [footer addSubview:volume_label];
+  status_volume = [[NSSlider alloc] initWithFrame:NSMakeRect(frame.size.width - 78, 4, 68, 18)];
+  status_volume.minValue = 0;
+  status_volume.maxValue = 100;
+  status_volume.integerValue = 100;
+  status_volume.autoresizingMask = NSViewMinXMargin;
+  [footer addSubview:status_volume];
+  [content addSubview:footer];
+}
+
+void swanium_macos_status_update(const char *text) {
+  if (status_label != nil) status_label.stringValue = [NSString stringWithUTF8String:text];
+}
+
+int swanium_macos_status_volume(void) {
+  return status_volume == nil ? 100 : (int)status_volume.integerValue;
 }

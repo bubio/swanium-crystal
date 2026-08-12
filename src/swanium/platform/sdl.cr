@@ -29,6 +29,9 @@ module Swanium
       EVENT_KEYDOWN              =      0x300_u32
       EVENT_CONTROLLER_ADDED     =      0x650_u32
       EVENT_CONTROLLER_REMOVED   =      0x651_u32
+      SDL_MAJOR_VERSION          =           2_u8
+      SDL_MINOR_VERSION          =          32_u8
+      SDL_PATCHLEVEL             =          70_u8
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -86,11 +89,24 @@ module Swanium
           userdata : Void*
         end
 
+        struct Version
+          major : UInt8
+          minor : UInt8
+          patch : UInt8
+        end
+
+        struct SysWMInfo
+          version : Version
+          subsystem : Int32
+          info : StaticArray(UInt8, 64)
+        end
+
         fun init = SDL_Init(flags : UInt32) : Int32
         fun quit = SDL_Quit : Nil
         fun get_error = SDL_GetError : LibC::Char*
         fun create_window = SDL_CreateWindow(title : LibC::Char*, x : Int32, y : Int32, width : Int32, height : Int32, flags : UInt32) : Void*
         fun destroy_window = SDL_DestroyWindow(window : Void*) : Nil
+        fun get_window_wm_info = SDL_GetWindowWMInfo(window : Void*, info : SysWMInfo*) : Int32
         fun set_window_size = SDL_SetWindowSize(window : Void*, width : Int32, height : Int32) : Nil
         fun set_window_fullscreen = SDL_SetWindowFullscreen(window : Void*, flags : UInt32) : Int32
         fun create_renderer = SDL_CreateRenderer(window : Void*, index : Int32, flags : UInt32) : Void*
@@ -140,10 +156,11 @@ module Swanium
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
             WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3,
+            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3 + 26,
             WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
+          controls.attach_status(native_window(window))
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
@@ -205,7 +222,7 @@ module Swanium
               LibSDL.clear_queued_audio(audio_device)
             end
             if scale = controls.take_scale_request
-              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale)
+              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 26)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
@@ -302,9 +319,10 @@ module Swanium
           StateStore.default.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            display_width * 3, display_height * 3, WINDOW_SHOWN
+            display_width * 3, display_height * 3 + 26, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
+          controls.attach_status(native_window(window))
           renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
@@ -372,7 +390,7 @@ module Swanium
               LibSDL.clear_queued_audio(audio_device)
             end
             if scale = controls.take_scale_request
-              LibSDL.set_window_size(window, display_width * scale, display_height * scale)
+              LibSDL.set_window_size(window, display_width * scale, display_height * scale + 26)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
@@ -482,6 +500,13 @@ module Swanium
       private def self.error_message : String
         error = LibSDL.get_error
         error.null? ? "SDL2 initialization failed" : String.new(error)
+      end
+
+      private def self.native_window(window : Void*) : Void*
+        info = LibSDL::SysWMInfo.new
+        info.version = LibSDL::Version.new(major: SDL_MAJOR_VERSION, minor: SDL_MINOR_VERSION, patch: SDL_PATCHLEVEL)
+        raise SdlError.new(error_message) if LibSDL.get_window_wm_info(window, pointerof(info)) == 0
+        info.info.to_unsafe.as(Void**).value
       end
 
       private def self.check(result : Int32) : Nil

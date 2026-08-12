@@ -2,6 +2,10 @@
 lib LibMacOSMenu
   fun build = swanium_macos_menu_build : Nil
   fun take_action = swanium_macos_menu_take_action : Int32
+  fun hide_menu = swanium_macos_menu_hide : Nil
+  fun attach_status = swanium_macos_status_attach(window : Void*) : Nil
+  fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
+  fun status_volume = swanium_macos_status_volume : Int32
 end
 
 module Swanium
@@ -27,6 +31,22 @@ module Swanium
 
       def self.take_action : Int32
         LibMacOSMenu.take_action
+      end
+
+      def self.hide_libui_menu : Nil
+        LibMacOSMenu.hide_menu
+      end
+
+      def self.attach_status(window : Void*) : Nil
+        LibMacOSMenu.attach_status(window)
+      end
+
+      def self.update_status(text : String) : Nil
+        LibMacOSMenu.update_status(text)
+      end
+
+      def self.volume : Int32
+        LibMacOSMenu.status_volume
       end
     end
   end

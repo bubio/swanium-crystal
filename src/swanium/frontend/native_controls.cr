@@ -7,7 +7,6 @@ module Swanium
     # own the low-latency screen, keyboard/gamepad, and audio paths, while
     # libui-ng/AppKit supplies accessible text, menus, and sliders.
     class NativeControls
-      getter volume : Int32
       getter quit_requested : Bool
 
       def self.start(title : String) : NativeControls
@@ -63,6 +62,9 @@ module Swanium
         end
         @window.show
         MacosMenu.install
+        # libui-ng needs this host menu to create its application-menu items,
+        # but the host itself must not remain as a second top-level menu.
+        MacosMenu.hide_libui_menu
         UIng.main_steps
       end
 
@@ -148,6 +150,15 @@ module Swanium
       def update_status(title : String, fps : Float64, paused : Bool) : Nil
         suffix = paused ? "paused" : "#{fps.round.to_i} fps"
         @status.text = "#{title} — #{suffix}"
+        MacosMenu.update_status("#{title} — #{suffix}")
+      end
+
+      def attach_status(window : Void*) : Nil
+        MacosMenu.attach_status(window)
+      end
+
+      def volume : Int32
+        MacosMenu.volume
       end
 
       def close : Nil
