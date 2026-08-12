@@ -140,25 +140,25 @@ void swanium_macos_status_attach(void *native_window) {
   NSWindow *window = (__bridge NSWindow *)native_window;
   NSView *content = window.contentView;
   if (content == nil || status_label != nil) return;
-  const CGFloat height = 26.0;
+  const CGFloat height = 22.0;
   NSRect frame = content.bounds;
   NSVisualEffectView *footer = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, height)];
-  footer.material = NSVisualEffectMaterialSidebar;
+  footer.material = NSVisualEffectMaterialUnderWindowBackground;
   footer.blendingMode = NSVisualEffectBlendingModeWithinWindow;
   footer.state = NSVisualEffectStateActive;
   footer.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
   status_label = [NSTextField labelWithString:@"Starting…"];
-  status_label.frame = NSMakeRect(10, 5, frame.size.width - 145, 17);
+  status_label.frame = NSMakeRect(8, 3, frame.size.width - 126, 16);
   status_label.font = [NSFont systemFontOfSize:12];
   status_label.lineBreakMode = NSLineBreakByTruncatingMiddle;
   status_label.autoresizingMask = NSViewWidthSizable;
   [footer addSubview:status_label];
-  NSTextField *volume_label = [NSTextField labelWithString:@"Volume"];
-  volume_label.frame = NSMakeRect(frame.size.width - 130, 5, 48, 17);
-  volume_label.font = [NSFont systemFontOfSize:12];
-  volume_label.autoresizingMask = NSViewMinXMargin;
-  [footer addSubview:volume_label];
-  status_volume = [[NSSlider alloc] initWithFrame:NSMakeRect(frame.size.width - 78, 4, 68, 18)];
+  NSImageView *speaker = [[NSImageView alloc] initWithFrame:NSMakeRect(frame.size.width - 116, 4, 14, 14)];
+  speaker.image = [NSImage imageNamed:NSImageNameTouchBarAudioOutputVolumeHighTemplate];
+  speaker.imageScaling = NSImageScaleProportionallyUpOrDown;
+  speaker.autoresizingMask = NSViewMinXMargin;
+  [footer addSubview:speaker];
+  status_volume = [[NSSlider alloc] initWithFrame:NSMakeRect(frame.size.width - 98, 2, 90, 18)];
   status_volume.minValue = 0;
   status_volume.maxValue = 100;
   status_volume.integerValue = 100;
@@ -186,6 +186,5 @@ int swanium_macos_status_reserved_height_pixels(void *sdl_window) {
   SDL_SysWMinfo info;
   SDL_VERSION(&info.version);
   if (SDL_GetWindowWMInfo((SDL_Window *)sdl_window, &info) == SDL_FALSE) return 0;
-  // Reserve an 8 pt visual divider above the 26 pt native footer.
-  return (int)lround(34.0 * info.info.cocoa.window.backingScaleFactor);
+  return (int)lround(22.0 * info.info.cocoa.window.backingScaleFactor);
 }

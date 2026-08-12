@@ -148,7 +148,7 @@ module Swanium
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
             WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3 + 26,
+            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3 + 22,
             WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
@@ -214,7 +214,7 @@ module Swanium
               LibSDL.clear_queued_audio(audio_device)
             end
             if scale = controls.take_scale_request
-              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 26)
+              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
@@ -314,7 +314,7 @@ module Swanium
           StateStore.default.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            display_width * 3, display_height * 3 + 26, WINDOW_SHOWN
+            display_width * 3, display_height * 3 + 22, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
@@ -385,7 +385,7 @@ module Swanium
               LibSDL.clear_queued_audio(audio_device)
             end
             if scale = controls.take_scale_request
-              LibSDL.set_window_size(window, display_width * scale, display_height * scale + 26)
+              LibSDL.set_window_size(window, display_width * scale, display_height * scale + 22)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
