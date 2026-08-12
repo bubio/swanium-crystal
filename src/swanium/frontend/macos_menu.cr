@@ -3,7 +3,9 @@ lib LibMacOSMenu
   fun build = swanium_macos_menu_build : Nil
   fun take_action = swanium_macos_menu_take_action : Int32
   fun hide_menu = swanium_macos_menu_hide : Nil
-  fun attach_status = swanium_macos_status_attach(window : Void*) : Nil
+  fun open_rom = swanium_macos_menu_open_rom : LibC::Char*
+  fun show_about = swanium_macos_menu_show_about : Nil
+  fun attach_status = swanium_macos_status_attach_sdl_window(window : Void*) : Nil
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
   fun status_volume = swanium_macos_status_volume : Int32
 end
@@ -13,6 +15,9 @@ module Swanium
     # AppKit submenus used where libui-ng exposes only flat menu items.
     module MacosMenu
       OPEN_ROM        =   1
+      ABOUT           =  41
+      SETTINGS        =  42
+      QUIT            =  43
       SAVE_STATE_BASE = 100
       LOAD_STATE_BASE = 200
       PAUSE           =   4
@@ -33,8 +38,13 @@ module Swanium
         LibMacOSMenu.take_action
       end
 
-      def self.hide_libui_menu : Nil
-        LibMacOSMenu.hide_menu
+      def self.open_rom : String?
+        path = LibMacOSMenu.open_rom
+        path.null? ? nil : String.new(path)
+      end
+
+      def self.show_about : Nil
+        LibMacOSMenu.show_about
       end
 
       def self.attach_status(window : Void*) : Nil

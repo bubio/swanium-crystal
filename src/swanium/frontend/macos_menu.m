@@ -1,8 +1,11 @@
 #import <Cocoa/Cocoa.h>
+#import <SDL.h>
+#import <SDL_syswm.h>
 
 static int pending_action = 0;
 static NSTextField *status_label = nil;
 static NSSlider *status_volume = nil;
+static NSString *opened_rom_path = nil;
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -38,8 +41,25 @@ static void add_top_level(NSMenu *bar, NSString *title, NSMenu *menu) {
 }
 
 void swanium_macos_menu_build(void) {
+  [NSApplication sharedApplication];
   NSMenu *bar = NSApp.mainMenu;
-  if (bar == nil || [bar itemWithTitle:@"Emulation"] != nil) return;
+  if (bar == nil) {
+    bar = [[NSMenu alloc] initWithTitle:@"Swanium Crystal"];
+    [NSApp setMainMenu:bar];
+  }
+  if ([bar itemWithTitle:@"Emulation"] != nil) return;
+
+  NSMenu *application = submenu(@"Swanium Crystal");
+  [application addItem:item(@"About Swanium Crystal", 41)];
+  [application addItem:[NSMenuItem separatorItem]];
+  NSMenuItem *settings = item(@"Settings…", 42);
+  settings.keyEquivalent = @",";
+  [application addItem:settings];
+  [application addItem:[NSMenuItem separatorItem]];
+  NSMenuItem *quit = item(@"Quit Swanium Crystal", 43);
+  quit.keyEquivalent = @"q";
+  [application addItem:quit];
+  add_top_level(bar, @"Swanium Crystal", application);
 
   NSMenu *emulation = submenu(@"Emulation");
   [emulation addItem:item(@"Open ROM…", 1)];
@@ -95,10 +115,21 @@ int swanium_macos_menu_take_action(void) {
   return action;
 }
 
-void swanium_macos_menu_hide(void) {
-  NSMenu *bar = NSApp.mainMenu;
-  NSMenuItem *host = [bar itemWithTitle:@"Swanium Crystal"];
-  if (host != nil) host.hidden = YES;
+const char *swanium_macos_menu_open_rom(void) {
+  NSOpenPanel *panel = [NSOpenPanel openPanel];
+  panel.allowedFileTypes = @[@"ws", @"wsc"];
+  panel.allowsMultipleSelection = NO;
+  panel.canChooseDirectories = NO;
+  if ([panel runModal] != NSModalResponseOK) return NULL;
+  opened_rom_path = panel.URL.path;
+  return opened_rom_path.UTF8String;
+}
+
+void swanium_macos_menu_show_about(void) {
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Swanium Crystal";
+  alert.informativeText = @"WonderSwan and WonderSwan Color emulator.";
+  [alert runModal];
 }
 
 void swanium_macos_status_attach(void *native_window) {
@@ -138,6 +169,13 @@ void swanium_macos_status_attach(void *native_window) {
   status_volume.autoresizingMask = NSViewMinXMargin;
   [footer addSubview:status_volume];
   [content addSubview:footer];
+}
+
+void swanium_macos_status_attach_sdl_window(void *sdl_window) {
+  SDL_SysWMinfo info;
+  SDL_VERSION(&info.version);
+  if (SDL_GetWindowWMInfo((SDL_Window *)sdl_window, &info) == SDL_FALSE) return;
+  swanium_macos_status_attach((__bridge void *)info.info.cocoa.window);
 }
 
 void swanium_macos_status_update(const char *text) {

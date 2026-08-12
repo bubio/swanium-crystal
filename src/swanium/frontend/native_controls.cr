@@ -26,34 +26,7 @@ module Swanium
         @fullscreen_requested = false
         @renderer_requested = nil.as(Int32?)
 
-        application = UIng::Menu.new("Swanium Crystal")
-        application.append_about_item.on_clicked do |window|
-          window.msg_box("About Swanium Crystal", "WonderSwan and WonderSwan Color emulator.")
-        end
-        application.append_preferences_item.on_clicked { |_| show_settings }
-        application.append_quit_item
-        # libui-ng reserves Quit items for this global callback. Registering
-        # uiMenuItemOnClicked on a Quit item terminates the process on macOS.
-        UIng.on_should_quit do
-          @quit_requested = true
-          false
-        end
-
-        # UIng needs a window to establish the process-wide menu bar. It is
-        # only a host: the SDL window contains all visible emulator controls.
-        @window = UIng::Window.new("Swanium Crystal", 1, 1, menubar: true)
-        @window.on_closing do
-          # Destruction from inside libui's close delegate is unsafe on
-          # macOS. The owning frontend performs it after its loop unwinds.
-          @quit_requested = true
-          false
-        end
-        @window.show
         MacosMenu.install
-        # libui-ng needs this host menu to create its application-menu items,
-        # but the host itself must not remain as a second top-level menu.
-        MacosMenu.hide_libui_menu
-        @window.hide
         UIng.main_steps
       end
 
@@ -62,7 +35,13 @@ module Swanium
         action = MacosMenu.take_action
         case action
         when MacosMenu::OPEN_ROM
-          @open_rom_path = @window.open_file
+          @open_rom_path = MacosMenu.open_rom
+        when MacosMenu::ABOUT
+          MacosMenu.show_about
+        when MacosMenu::SETTINGS
+          show_settings
+        when MacosMenu::QUIT
+          @quit_requested = true
         when MacosMenu::SAVE_STATE_BASE..(MacosMenu::SAVE_STATE_BASE + 9)
           @save_state_requested = action - MacosMenu::SAVE_STATE_BASE
         when MacosMenu::LOAD_STATE_BASE..(MacosMenu::LOAD_STATE_BASE + 9)
@@ -153,7 +132,6 @@ module Swanium
         @settings_window.try do |window|
           window.destroy unless window.released?
         end
-        @window.destroy unless @window.released?
         UIng.uninit
       end
 
