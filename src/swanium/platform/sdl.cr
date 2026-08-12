@@ -139,7 +139,8 @@ module Swanium
       end
 
       # Interactive, copyright-free display/input verification program. It
-      # stays open until Escape or the window close button is pressed.
+      # stays open until the window close button is pressed. Escape leaves
+      # fullscreen mode when it is active.
       def self.video_demo : Nil
         controls = Frontend::NativeControls.start("Video demo")
         if LibSDL.init(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
@@ -239,7 +240,10 @@ module Swanium
               LibSDL.clear_queued_audio(audio_device)
             end
             keys, escape = input_state(controller)
-            running = false if escape
+            if escape && fullscreen
+              fullscreen = false
+              check(LibSDL.set_window_fullscreen(window, 0_u32))
+            end
             if debugger.paused
               debugger.run_instruction?(machine, bus)
             else
@@ -410,7 +414,10 @@ module Swanium
             # The display rotates left, so host directions need the opposite
             # (right) compensation to keep on-screen movement intuitive.
             keys = rotate_input_right(keys) if vertical
-            running = false if escape
+            if escape && fullscreen
+              fullscreen = false
+              check(LibSDL.set_window_fullscreen(window, 0_u32))
+            end
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             if debugger.paused
               debugger.run_instruction?(machine, bus)
