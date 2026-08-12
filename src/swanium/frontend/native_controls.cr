@@ -33,7 +33,13 @@ module Swanium
           window.msg_box("About Swanium Crystal", "WonderSwan and WonderSwan Color emulator.")
         end
         application.append_preferences_item.on_clicked { |_| show_settings }
-        application.append_quit_item.on_clicked { |_| @quit_requested = true }
+        application.append_quit_item
+        # libui-ng reserves Quit items for this global callback. Registering
+        # uiMenuItemOnClicked on a Quit item terminates the process on macOS.
+        UIng.on_should_quit do
+          @quit_requested = true
+          false
+        end
 
         @status = UIng::Label.new("#{title} — starting…")
         @volume_label = UIng::Label.new("Volume: 100%")
