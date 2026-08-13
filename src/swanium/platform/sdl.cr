@@ -592,19 +592,25 @@ module Swanium
         keys |= Core::WonderSwanKey::B if state[bindings.scancode(:b)] != 0
         keys |= Core::WonderSwanKey::Start if state[bindings.scancode(:start)] != 0
         unless controller.null?
-          keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, PAD_A) != 0
-          keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, PAD_B) != 0
-          keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, PAD_START) != 0
-          keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
-          keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
-          keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
-          keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
-          keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
-            LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), Core::WonderSwanKey::X1,
-            Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
-          keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
-            LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), Core::WonderSwanKey::Y1,
-            Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
+          keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, bindings.controller_button(:a)) != 0
+          keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, bindings.controller_button(:b)) != 0
+          keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, bindings.controller_button(:start)) != 0
+          if bindings.controller_enabled?("x_dpad")
+            keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
+            keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
+            keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
+            keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+          end
+          if bindings.controller_enabled?("x_left_stick")
+            keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
+              LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), Core::WonderSwanKey::X1,
+              Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
+          end
+          if bindings.controller_enabled?("y_right_stick")
+            keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
+              LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), Core::WonderSwanKey::Y1,
+              Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
+          end
         end
         {keys, state[SC_ESCAPE] != 0}
       end

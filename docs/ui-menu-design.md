@@ -14,7 +14,7 @@
 - `Renderer`: Nearest NeighborとBilinearを選ぶサブメニュー。
 - `Escape`: フルスクリーン中は通常ウィンドウへ戻る。アプリケーションは終了しない。
 
-SDL GameController対応のゲームパッドは、D-padと左スティックをXパッド、右スティックをYパッド、A／B／Startを各ボタンへ割り当てる。接続・切断は実行中に検出する。
+SDL GameController対応のゲームパッドは、D-padと左スティックをXパッド、右スティックをYパッド、A／B／Startを各ボタンへ割り当てる。Settingsから各方向入力の有効化とA／B／Startの物理ボタンを変更できる。接続・切断は実行中に検出する。
 
 画面の向きはROMヘッダーの縦持ち／横持ち情報から自動決定する。手動回転は提供しない。
 

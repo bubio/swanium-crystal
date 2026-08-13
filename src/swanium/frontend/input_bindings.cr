@@ -15,6 +15,10 @@ module Swanium
         {"W", 26}, {"A", 4}, {"S", 22}, {"D", 7},
         {"X", 27}, {"Z", 29}, {"Return", 40}, {"Space", 44},
       ]
+      CONTROLLER_BUTTON_OPTIONS = [
+        {"A", 0}, {"B", 1}, {"X", 2}, {"Y", 3}, {"Back", 4}, {"Start", 6},
+        {"Left Shoulder", 9}, {"Right Shoulder", 10},
+      ]
 
       @@default : InputBindings? = nil
 
@@ -56,6 +60,40 @@ module Swanium
 
       def self.option_scancode(index : Int32) : Int32
         OPTIONS[index.clamp(0, OPTIONS.size - 1)][1]
+      end
+
+      def controller_button(action : Symbol) : Int32
+        defaults = {a: 0, b: 1, start: 6}
+        Platform::StateStore.default.settings["controller.#{action}"]?.try(&.to_i?).try(&.clamp(0, 20)) || defaults[action]
+      end
+
+      def set_controller_button(action : Symbol, button : Int32) : Nil
+        raise ArgumentError.new("unknown controller action: #{action}") unless [:a, :b, :start].includes?(action)
+        settings = Platform::StateStore.default.settings
+        settings["controller.#{action}"] = button.to_s
+        Platform::StateStore.default.save_settings(settings)
+      end
+
+      def controller_enabled?(name : String, default : Bool = true) : Bool
+        Platform::StateStore.default.settings["controller.#{name}"]?.try { |value| value == "true" } || default
+      end
+
+      def set_controller_enabled(name : String, enabled : Bool) : Nil
+        settings = Platform::StateStore.default.settings
+        settings["controller.#{name}"] = enabled.to_s
+        Platform::StateStore.default.save_settings(settings)
+      end
+
+      def self.controller_button_names : Array(String)
+        CONTROLLER_BUTTON_OPTIONS.map(&.[0])
+      end
+
+      def self.controller_button_index(button : Int32) : Int32
+        CONTROLLER_BUTTON_OPTIONS.index { |option| option[1] == button }.try(&.to_i) || 0
+      end
+
+      def self.controller_button_value(index : Int32) : Int32
+        CONTROLLER_BUTTON_OPTIONS[index.clamp(0, CONTROLLER_BUTTON_OPTIONS.size - 1)][1]
       end
 
       private def load : Nil

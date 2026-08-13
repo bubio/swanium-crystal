@@ -209,12 +209,26 @@ module Swanium
           end
           form.append(InputBindings.action_label(action), selection)
         end
-        controller = UIng::Label.new("Controller\nD-pad / left stick: X pad\nRight stick: Y pad\nA / B / Start: corresponding buttons")
+        controller_form = UIng::Form.new(padded: true)
+        {"X pad: D-pad" => "x_dpad", "X pad: left stick" => "x_left_stick", "Y pad: right stick" => "y_right_stick"}.each do |label, key|
+          enabled = UIng::Checkbox.new(label)
+          enabled.checked = InputBindings.default.controller_enabled?(key)
+          enabled.on_toggled { |checked| InputBindings.default.set_controller_enabled(key, checked) }
+          controller_form.append("", enabled)
+        end
+        {"A button" => :a, "B button" => :b, "Start" => :start}.each do |label, action|
+          selection = UIng::Combobox.new(InputBindings.controller_button_names)
+          selection.selected = InputBindings.controller_button_index(InputBindings.default.controller_button(action))
+          selection.on_selected { |index| InputBindings.default.set_controller_button(action, InputBindings.controller_button_value(index)) }
+          controller_form.append(label, selection)
+        end
         controls = UIng::Box.new(:vertical, padded: true)
         controls.append(form)
-        controls.append(controller)
-        window = UIng::Window.new("Swanium Crystal Settings", 360, 510, margined: true)
+        controls.append(UIng::Label.new("Controller"))
+        controls.append(controller_form)
+        window = UIng::Window.new("Swanium Crystal Settings", 400, 690, margined: true)
         window.child = controls
+        window.set_position(x: 500, y: 180)
         window.on_closing do
           @settings_window = nil
           true
