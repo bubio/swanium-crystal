@@ -117,6 +117,16 @@ module Swanium
         scale
       end
 
+      def initial_scale : Int32
+        Platform::StateStore.default.settings["scale"]?.try(&.to_i?).try(&.clamp(1, 4)) || 3
+      end
+
+      def save_scale(scale : Int32) : Nil
+        settings = Platform::StateStore.default.settings
+        settings["scale"] = scale.clamp(1, 4).to_s
+        Platform::StateStore.default.save_settings(settings)
+      end
+
       def take_fullscreen_request? : Bool
         requested = @fullscreen_requested
         @fullscreen_requested = false

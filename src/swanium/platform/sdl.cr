@@ -144,11 +144,12 @@ module Swanium
         texture = Pointer(Void).null
         controller = Pointer(Void).null
         audio_device = 0_u32
+        scale = controls.initial_scale
         begin
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
             WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            Core::Ppu::SCREEN_WIDTH * 3, Core::Ppu::SCREEN_HEIGHT * 3 + 22,
+            Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22,
             WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
@@ -192,7 +193,6 @@ module Swanium
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
           fullscreen = false
-          scale = 3
           renderer_mode = 0
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
@@ -220,6 +220,7 @@ module Swanium
             if requested_scale = controls.take_scale_request
               scale = requested_scale
               LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22)
+              controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
@@ -323,11 +324,12 @@ module Swanium
         display_width = vertical ? Core::Ppu::SCREEN_HEIGHT : Core::Ppu::SCREEN_WIDTH
         display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
         rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
+        scale = controls.initial_scale
         begin
           StateStore.default.load_cartridge_save(bus, title)
           window = LibSDL.create_window(
             "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
-            display_width * 3, display_height * 3 + 22, WINDOW_SHOWN
+            display_width * scale, display_height * scale + 22, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
@@ -371,7 +373,6 @@ module Swanium
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
           fullscreen = false
-          scale = 3
           renderer_mode = 0
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
@@ -404,6 +405,7 @@ module Swanium
             if requested_scale = controls.take_scale_request
               scale = requested_scale
               LibSDL.set_window_size(window, display_width * scale, display_height * scale + 22)
+              controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen

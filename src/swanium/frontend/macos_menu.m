@@ -14,6 +14,7 @@ static NSMenuItem *scale_items[4] = {nil};
 static NSMenuItem *renderer_items[2] = {nil};
 static NSMenuItem *load_state_items[10] = {nil};
 static NSMenuItem *save_state_items[10] = {nil};
+static NSMenuItem *load_state_root = nil;
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -93,9 +94,9 @@ void swanium_macos_menu_build(void) {
   NSMenuItem *save_root = [[NSMenuItem alloc] initWithTitle:@"Save State" action:nil keyEquivalent:@""];
   save_root.submenu = save_state;
   [emulation addItem:save_root];
-  NSMenuItem *load_root = [[NSMenuItem alloc] initWithTitle:@"Load State" action:nil keyEquivalent:@""];
-  load_root.submenu = load_state;
-  [emulation addItem:load_root];
+  load_state_root = [[NSMenuItem alloc] initWithTitle:@"Load State" action:nil keyEquivalent:@""];
+  load_state_root.submenu = load_state;
+  [emulation addItem:load_state_root];
   [emulation addItem:[NSMenuItem separatorItem]];
   pause_item = item(@"Pause", 4);
   [emulation addItem:pause_item];
@@ -130,11 +131,14 @@ void swanium_macos_menu_build(void) {
 }
 
 void swanium_macos_menu_set_state_slots(const char **labels, const int *slots) {
+  BOOL any_loadable = NO;
   for (NSInteger slot = 0; slot < 10; slot++) {
     save_state_items[slot].title = [NSString stringWithUTF8String:labels[slot]];
     load_state_items[slot].title = [NSString stringWithUTF8String:labels[slot]];
     load_state_items[slot].enabled = slots[slot] != 0;
+    any_loadable |= slots[slot] != 0;
   }
+  load_state_root.enabled = any_loadable;
 }
 
 void swanium_macos_menu_update_state(BOOL paused, int scale, BOOL fullscreen, int renderer) {
