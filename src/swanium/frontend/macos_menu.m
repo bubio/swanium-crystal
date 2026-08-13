@@ -13,6 +13,7 @@ static NSMenuItem *fullscreen_item = nil;
 static NSMenuItem *scale_items[4] = {nil};
 static NSMenuItem *renderer_items[2] = {nil};
 static NSMenuItem *load_state_items[10] = {nil};
+static NSMenuItem *save_state_items[10] = {nil};
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -84,7 +85,8 @@ void swanium_macos_menu_build(void) {
   NSMenu *load_state = submenu(@"Load State");
   for (NSInteger slot = 0; slot < 10; slot++) {
     NSString *title = [NSString stringWithFormat:@"Slot %ld", (long)slot];
-    [save_state addItem:item(title, 100 + slot)];
+    save_state_items[slot] = item(title, 100 + slot);
+    [save_state addItem:save_state_items[slot]];
     load_state_items[slot] = item(title, 200 + slot);
     [load_state addItem:load_state_items[slot]];
   }
@@ -127,8 +129,10 @@ void swanium_macos_menu_build(void) {
   add_top_level(bar, @"View", view);
 }
 
-void swanium_macos_menu_set_load_slots(const int *slots) {
+void swanium_macos_menu_set_state_slots(const char **labels, const int *slots) {
   for (NSInteger slot = 0; slot < 10; slot++) {
+    save_state_items[slot].title = [NSString stringWithUTF8String:labels[slot]];
+    load_state_items[slot].title = [NSString stringWithUTF8String:labels[slot]];
     load_state_items[slot].enabled = slots[slot] != 0;
   }
 }
@@ -189,6 +193,14 @@ void swanium_macos_menu_show_about(void) {
   NSAlert *alert = [[NSAlert alloc] init];
   alert.messageText = @"Swanium Crystal";
   alert.informativeText = @"WonderSwan and WonderSwan Color emulator.";
+  [alert runModal];
+}
+
+void swanium_macos_menu_show_error(const char *message) {
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleWarning;
+  alert.messageText = @"Could not load save state";
+  alert.informativeText = [NSString stringWithUTF8String:message];
   [alert runModal];
 }
 

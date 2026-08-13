@@ -1,3 +1,5 @@
+require "digest/sha256"
+
 module Swanium
   module Core
     # Cartridge metadata lives in the final sixteen bytes of a WonderSwan ROM.
@@ -98,6 +100,12 @@ module Swanium
       # cannot alter the image after its footer and mapper have been accepted.
       def rom_snapshot : Bytes
         @rom.dup
+      end
+
+      # Stable contents identifier used to isolate save states by ROM, rather
+      # than by a mutable or ambiguous filename.
+      def identity : String
+        Digest::SHA256.hexdigest(@rom)
       end
 
       def model : WonderSwanModel

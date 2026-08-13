@@ -5,6 +5,7 @@ lib LibMacOSMenu
   fun hide_menu = swanium_macos_menu_hide : Nil
   fun open_rom = swanium_macos_menu_open_rom : LibC::Char*
   fun show_about = swanium_macos_menu_show_about : Nil
+  fun show_error = swanium_macos_menu_show_error(message : LibC::Char*) : Nil
   fun attach_status = swanium_macos_status_attach_sdl_window(window : Void*) : Nil
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
   fun status_volume = swanium_macos_status_volume : Int32
@@ -13,7 +14,7 @@ lib LibMacOSMenu
   fun set_recent_roms = swanium_macos_menu_set_recent_roms(paths : LibC::Char**) : Nil
   fun recent_rom = swanium_macos_menu_recent_rom(index : Int32) : LibC::Char*
   fun update_menu_state = swanium_macos_menu_update_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil
-  fun set_load_slots = swanium_macos_menu_set_load_slots(slots : Int32*) : Nil
+  fun set_state_slots = swanium_macos_menu_set_state_slots(labels : LibC::Char**, loadable : Int32*) : Nil
 end
 
 module Swanium
@@ -61,9 +62,11 @@ module Swanium
         LibMacOSMenu.update_menu_state(paused, scale, fullscreen, renderer)
       end
 
-      def self.set_load_slots(slots : Array(Bool)) : Nil
+      def self.set_state_slots(labels : Array(String), slots : Array(Bool)) : Nil
+        label_pointers = labels.map(&.to_unsafe)
+        label_pointers << Pointer(LibC::Char).null
         values = slots.map { |available| available ? 1 : 0 }
-        LibMacOSMenu.set_load_slots(values.to_unsafe)
+        LibMacOSMenu.set_state_slots(label_pointers.to_unsafe, values.to_unsafe)
       end
 
       def self.open_rom : String?
@@ -73,6 +76,10 @@ module Swanium
 
       def self.show_about : Nil
         LibMacOSMenu.show_about
+      end
+
+      def self.show_error(message : String) : Nil
+        LibMacOSMenu.show_error(message)
       end
 
       def self.attach_status(window : Void*) : Nil

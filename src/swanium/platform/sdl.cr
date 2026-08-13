@@ -161,7 +161,7 @@ module Swanium
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
           controller = first_controller
-          controls.update_state_slots("demo")
+          controls.update_state_slots("video-demo")
 
           desired = LibSDL::AudioSpec.new
           desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
@@ -204,7 +204,8 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device)
+                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, "video-demo")
+                controls.update_state_slots("video-demo") if keyboard.scancode == SC_F5 && keyboard.repeat == 0_u8
               end
             end
             controls.pump
@@ -229,12 +230,16 @@ module Swanium
               check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
             end
             if slot = controls.take_save_state_request
-              StateStore.default.save(machine, bus, "demo", slot)
-              controls.update_state_slots("demo")
+              StateStore.default.save(machine, bus, "video-demo", slot)
+              controls.update_state_slots("video-demo")
             end
             if slot = controls.take_load_state_request
-              StateStore.default.load(machine, bus, "demo", slot)
-              LibSDL.clear_queued_audio(audio_device)
+              begin
+                StateStore.default.load(machine, bus, "video-demo", slot)
+                LibSDL.clear_queued_audio(audio_device)
+              rescue ex : Core::SaveStateError | File::Error
+                controls.show_error(ex.message || "Unknown save-state error")
+              end
             end
             keys, escape = input_state(controller)
             if escape && fullscreen
@@ -314,6 +319,7 @@ module Swanium
         machine.cpu.reset(0xFFFF_u16, 0_u16)
         debugger = Frontend::Debugger.new
         vertical = cartridge.header.vertical
+        state_id = cartridge.identity
         display_width = vertical ? Core::Ppu::SCREEN_HEIGHT : Core::Ppu::SCREEN_WIDTH
         display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
         rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
@@ -333,7 +339,7 @@ module Swanium
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
           controller = first_controller
-          controls.update_state_slots(title)
+          controls.update_state_slots(state_id)
 
           desired = LibSDL::AudioSpec.new
           desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
@@ -377,7 +383,8 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, title)
+                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, state_id)
+                controls.update_state_slots(state_id) if keyboard.scancode == SC_F5 && keyboard.repeat == 0_u8
               end
             end
             controls.pump
@@ -407,12 +414,16 @@ module Swanium
               check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
             end
             if slot = controls.take_save_state_request
-              StateStore.default.save(machine, bus, title, slot)
-              controls.update_state_slots(title)
+              StateStore.default.save(machine, bus, state_id, slot)
+              controls.update_state_slots(state_id)
             end
             if slot = controls.take_load_state_request
-              StateStore.default.load(machine, bus, title, slot)
-              LibSDL.clear_queued_audio(audio_device)
+              begin
+                StateStore.default.load(machine, bus, state_id, slot)
+                LibSDL.clear_queued_audio(audio_device)
+              rescue ex : Core::SaveStateError | File::Error
+                controls.show_error(ex.message || "Unknown save-state error")
+              end
             end
             keys, escape = input_state(controller)
             # The display rotates left, so host directions need the opposite

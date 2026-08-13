@@ -5,6 +5,7 @@ module Swanium
     # Restricts save states to Swanium's own settings directory and numbered
     # slots, so arbitrary paths never enter the product UI.
     class StateStore
+      STATE_MAGIC = "SWCSLOT1".to_slice
       @@default : StateStore? = nil
 
       def initialize(@root : Path = self.class.default_root)
@@ -14,9 +15,9 @@ module Swanium
         @@default ||= new
       end
 
-      def path(game_id : String = "demo", slot : Int32 = 0) : Path
+      def path(rom_id : String = "demo", slot : Int32 = 0) : Path
         raise ArgumentError.new("save-state slot must be between 0 and 9") unless slot.in?(0..9)
-        @root / "swanium-crystal" / "states" / "#{safe_name(game_id)}-#{slot}.swcstate"
+        @root / "swanium-crystal" / "states" / safe_name(rom_id) / "slot-#{slot}.swcstate"
       end
 
       def cartridge_save_path(game_id : String) : Path
@@ -80,20 +81,37 @@ module Swanium
         state_root
       end
 
-      def save(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
-        destination = path(game_id, slot)
-        write_atomically(destination, Core::SaveState.dump(machine, bus))
+      def save(machine : Core::Machine, bus : Core::WonderSwanBus, rom_id : String, slot : Int32 = 0) : Path
+        destination = path(rom_id, slot)
+        payload = IO::Memory.new
+        payload.write(STATE_MAGIC)
+        payload.write(rom_id.to_slice)
+        payload.write(Core::SaveState.dump(machine, bus))
+        write_atomically(destination, payload.to_slice)
         destination
       end
 
-      def load(machine : Core::Machine, bus : Core::WonderSwanBus, game_id : String = "demo", slot : Int32 = 0) : Path
-        source = path(game_id, slot)
-        Core::SaveState.load(File.read(source).to_slice, machine, bus)
+      def load(machine : Core::Machine, bus : Core::WonderSwanBus, rom_id : String, slot : Int32 = 0) : Path
+        source = path(rom_id, slot)
+        bytes = File.read(source).to_slice
+        header_size = STATE_MAGIC.size + rom_id.bytesize
+        raise Core::SaveStateError.new("save state belongs to a different ROM") if bytes.size < header_size || bytes[0, STATE_MAGIC.size] != STATE_MAGIC || String.new(bytes[STATE_MAGIC.size, rom_id.bytesize]) != rom_id
+        Core::SaveState.load(bytes[header_size..], machine, bus)
         source
       end
 
-      def state_exists?(game_id : String, slot : Int32) : Bool
-        File.exists?(path(game_id, slot))
+      def state_exists?(rom_id : String, slot : Int32) : Bool
+        source = path(rom_id, slot)
+        return false unless File.exists?(source)
+        bytes = File.read(source).to_slice
+        bytes.size >= STATE_MAGIC.size + rom_id.bytesize && bytes[0, STATE_MAGIC.size] == STATE_MAGIC && String.new(bytes[STATE_MAGIC.size, rom_id.bytesize]) == rom_id
+      end
+
+      def state_slot_labels(rom_id : String) : Array(String)
+        10.times.map do |slot|
+          source = path(rom_id, slot)
+          state_exists?(rom_id, slot) ? "Slot #{slot} — #{File.info(source).modification_time.to_local.to_s("%Y-%m-%d %H:%M:%S")}" : "Slot #{slot}"
+        end.to_a
       end
 
       def load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil

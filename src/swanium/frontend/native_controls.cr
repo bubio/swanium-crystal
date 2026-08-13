@@ -138,9 +138,14 @@ module Swanium
         MacosMenu.update_menu_state(paused, scale, fullscreen, renderer)
       end
 
-      def update_state_slots(game_id : String) : Nil
-        slots = 10.times.map { |slot| Platform::StateStore.default.state_exists?(game_id, slot) }.to_a
-        MacosMenu.set_load_slots(slots)
+      def update_state_slots(rom_id : String) : Nil
+        store = Platform::StateStore.default
+        slots = 10.times.map { |slot| store.state_exists?(rom_id, slot) }.to_a
+        MacosMenu.set_state_slots(store.state_slot_labels(rom_id), slots)
+      end
+
+      def show_error(message : String) : Nil
+        MacosMenu.show_error(message)
       end
 
       def attach_status(window : Void*) : Nil
