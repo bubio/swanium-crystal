@@ -13,14 +13,12 @@ static NSButton *controller_buttons[3] = {nil};
 static NSPopUpButton *direction_popups[3] = {nil};
 static NSInteger keyboard_capture_tag = -1;
 
-// Coordinates are in an NSTabViewItem's content view.  Keep the first row
-// below NSTabView's tab selector; placing it at the tab view's top overlaps
-// the selected tab label.
 static const CGFloat settings_outer_inset = 16.0;
-static const CGFloat settings_label_x = 18.0;
-static const CGFloat settings_control_x = 205.0;
-static const CGFloat settings_row_top = 370.0;
-static const CGFloat settings_row_spacing = 30.0;
+static const CGFloat settings_content_inset = 20.0;
+static const CGFloat settings_row_spacing = 8.0;
+static const CGFloat settings_group_spacing = 24.0;
+static const CGFloat settings_label_width = 172.0;
+static const CGFloat settings_control_width = 200.0;
 static const CGFloat settings_control_height = 26.0;
 
 static int sdl_scancode_for_macos_keycode(unsigned short keycode) {
@@ -90,18 +88,48 @@ static NSMenu *submenu(NSString *title) {
   return menu;
 }
 
-static NSTextField *settings_label(NSString *text, NSRect frame) {
+static NSTextField *settings_label(NSString *text) {
   NSTextField *label = [NSTextField labelWithString:text];
-  label.frame = frame;
   label.font = [NSFont systemFontOfSize:13];
+  label.translatesAutoresizingMaskIntoConstraints = NO;
+  [[label widthAnchor] constraintEqualToConstant:settings_label_width].active = YES;
   return label;
 }
 
-static NSButton *settings_capture_button(NSInteger tag, NSRect frame) {
+static NSButton *settings_capture_button(NSInteger tag) {
   NSButton *button = [NSButton buttonWithTitle:@"Press a key…" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
   button.tag = tag;
-  button.frame = frame;
+  button.translatesAutoresizingMaskIntoConstraints = NO;
+  [[button widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
+  [[button heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
   return button;
+}
+
+static NSStackView *settings_row(NSString *label_text, NSView *control) {
+  NSStackView *row = [NSStackView stackViewWithViews:@[settings_label(label_text), control]];
+  row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+  row.alignment = NSLayoutAttributeCenterY;
+  row.spacing = 16.0;
+  row.translatesAutoresizingMaskIntoConstraints = NO;
+  return row;
+}
+
+static NSStackView *settings_stack(void) {
+  NSStackView *stack = [NSStackView new];
+  stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+  stack.alignment = NSLayoutAttributeLeading;
+  stack.spacing = settings_row_spacing;
+  stack.translatesAutoresizingMaskIntoConstraints = NO;
+  return stack;
+}
+
+static void install_settings_stack(NSStackView *stack, NSView *content) {
+  [content addSubview:stack];
+  [NSLayoutConstraint activateConstraints:@[
+    [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:settings_content_inset],
+    [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-settings_content_inset],
+    [stack.topAnchor constraintEqualToAnchor:content.topAnchor constant:settings_content_inset],
+  ]];
 }
 
 static void add_top_level(NSMenu *bar, NSString *title, NSMenu *menu) {
@@ -285,50 +313,64 @@ void swanium_macos_menu_show_error(const char *message) {
 void swanium_macos_settings_show(void) {
   if (main_window == nil) return;
   if (settings_panel == nil) {
-    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 460)
+    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 520)
       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
     settings_panel.title = @"Swanium Crystal Settings";
-    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, 14, 428, 430)];
+    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, settings_outer_inset, 428, 488)];
     NSView *keyboard = [[NSView alloc] initWithFrame:tabs.bounds];
+    NSStackView *keyboard_stack = settings_stack();
     NSArray<NSString *> *labels = @[@"X Pad Up", @"X Pad Right", @"X Pad Down", @"X Pad Left", @"Y Pad Up", @"Y Pad Right", @"Y Pad Down", @"Y Pad Left", @"A Button", @"B Button", @"Start"];
+    NSStackView *last_keyboard_row = nil;
     for (NSInteger index = 0; index < labels.count; index++) {
-      CGFloat y = settings_row_top - index * settings_row_spacing;
-      [keyboard addSubview:settings_label(labels[index], NSMakeRect(settings_label_x, y, 170, 22))];
-      keyboard_buttons[index] = settings_capture_button(400 + index, NSMakeRect(settings_control_x, y - 2, 180, settings_control_height));
-      [keyboard addSubview:keyboard_buttons[index]];
+      keyboard_buttons[index] = settings_capture_button(400 + index);
+      last_keyboard_row = settings_row(labels[index], keyboard_buttons[index]);
+      [keyboard_stack addArrangedSubview:last_keyboard_row];
     }
     NSButton *keyboard_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
-    keyboard_defaults.frame = NSMakeRect(250, 15, 135, 26);
     keyboard_defaults.tag = 420;
-    [keyboard addSubview:keyboard_defaults];
+    keyboard_defaults.translatesAutoresizingMaskIntoConstraints = NO;
+    [[keyboard_defaults widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
+    [[keyboard_defaults heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
+    [keyboard_stack setCustomSpacing:16.0 afterView:last_keyboard_row];
+    [keyboard_stack addArrangedSubview:settings_row(@"", keyboard_defaults)];
+    install_settings_stack(keyboard_stack, keyboard);
     NSTabViewItem *keyboard_tab = [[NSTabViewItem alloc] initWithIdentifier:@"keyboard"];
     keyboard_tab.label = @"Keyboard";
     keyboard_tab.view = keyboard;
     [tabs addTabViewItem:keyboard_tab];
 
     NSView *controller = [[NSView alloc] initWithFrame:tabs.bounds];
+    NSStackView *controller_stack = settings_stack();
     NSArray<NSString *> *directions = @[@"D-pad", @"Left stick", @"Right stick"];
+    NSStackView *last_direction_row = nil;
     for (NSInteger index = 0; index < directions.count; index++) {
-      CGFloat y = settings_row_top - index * settings_row_spacing;
-      [controller addSubview:settings_label(directions[index], NSMakeRect(settings_label_x, y, 170, 22))];
-      direction_popups[index] = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(settings_control_x, y - 2, 180, settings_control_height) pullsDown:NO];
+      direction_popups[index] = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+      direction_popups[index].translatesAutoresizingMaskIntoConstraints = NO;
+      [[direction_popups[index] widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
+      [[direction_popups[index] heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
       [direction_popups[index] addItemsWithTitles:@[@"Disabled", @"X Pad", @"Y Pad"]];
       direction_popups[index].target = [SwaniumMenuTarget sharedTarget];
       direction_popups[index].action = @selector(activate:);
       direction_popups[index].tag = 600 + index;
-      [controller addSubview:direction_popups[index]];
+      last_direction_row = settings_row(directions[index], direction_popups[index]);
+      [controller_stack addArrangedSubview:last_direction_row];
     }
     NSArray<NSString *> *button_labels = @[@"A Button", @"B Button", @"Start"];
+    [controller_stack setCustomSpacing:settings_group_spacing afterView:last_direction_row];
+    NSStackView *last_controller_button_row = nil;
     for (NSInteger index = 0; index < button_labels.count; index++) {
-      CGFloat y = 250 - index * settings_row_spacing;
-      [controller addSubview:settings_label(button_labels[index], NSMakeRect(settings_label_x, y, 170, 22))];
-      controller_buttons[index] = settings_capture_button(500 + index, NSMakeRect(settings_control_x, y - 2, 180, settings_control_height));
-      [controller addSubview:controller_buttons[index]];
+      controller_buttons[index] = settings_capture_button(500 + index);
+      last_controller_button_row = settings_row(button_labels[index], controller_buttons[index]);
+      [controller_stack addArrangedSubview:last_controller_button_row];
     }
     NSButton *controller_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
-    controller_defaults.frame = NSMakeRect(250, 15, 135, 26);
     controller_defaults.tag = 520;
-    [controller addSubview:controller_defaults];
+    controller_defaults.translatesAutoresizingMaskIntoConstraints = NO;
+    [[controller_defaults widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
+    [[controller_defaults heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
+    [controller_stack setCustomSpacing:16.0 afterView:last_controller_button_row];
+    [controller_stack addArrangedSubview:settings_row(@"", controller_defaults)];
+    install_settings_stack(controller_stack, controller);
     NSTabViewItem *controller_tab = [[NSTabViewItem alloc] initWithIdentifier:@"controller"];
     controller_tab.label = @"Controller";
     controller_tab.view = controller;
