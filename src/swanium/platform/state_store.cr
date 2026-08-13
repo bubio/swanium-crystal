@@ -23,6 +23,25 @@ module Swanium
         @root / "swanium-crystal" / "saves" / "#{safe_name(game_id)}.sav"
       end
 
+      def recent_roms_path : Path
+        @root / "swanium-crystal" / "recent-roms.txt"
+      end
+
+      def recent_roms : Array(String)
+        source = recent_roms_path
+        return [] of String unless File.exists?(source)
+        File.read_lines(source).map(&.strip).select { |path| !path.empty? && File.exists?(path) }.first(10)
+      end
+
+      def record_recent_rom(path : String) : Nil
+        return unless File.file?(path)
+        entries = recent_roms.reject { |entry| entry == path }
+        entries.unshift(path)
+        destination = recent_roms_path
+        Dir.mkdir_p(destination.parent)
+        File.write(destination, entries.first(10).join('\n') + '\n')
+      end
+
       # The application may inspect the platform-default root while tests and
       # alternate frontends inject a different root through the initializer.
       def self.default_root : Path

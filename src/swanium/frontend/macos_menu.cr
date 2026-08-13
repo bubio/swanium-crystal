@@ -9,6 +9,8 @@ lib LibMacOSMenu
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
   fun status_volume = swanium_macos_status_volume : Int32
   fun status_reserved_height = swanium_macos_status_reserved_height_pixels(window : Void*) : Int32
+  fun set_recent_roms = swanium_macos_menu_set_recent_roms(paths : LibC::Char**) : Nil
+  fun recent_rom = swanium_macos_menu_recent_rom(index : Int32) : LibC::Char*
 end
 
 module Swanium
@@ -30,6 +32,7 @@ module Swanium
       FULLSCREEN      =  20
       RENDER_NEAREST  =  31
       RENDER_LINEAR   =  32
+      RECENT_BASE     = 300
 
       def self.install : Nil
         LibMacOSMenu.build
@@ -37,6 +40,17 @@ module Swanium
 
       def self.take_action : Int32
         LibMacOSMenu.take_action
+      end
+
+      def self.set_recent_roms(paths : Array(String)) : Nil
+        pointers = paths.map(&.to_unsafe)
+        pointers << Pointer(LibC::Char).null
+        LibMacOSMenu.set_recent_roms(pointers.to_unsafe)
+      end
+
+      def self.recent_rom(index : Int32) : String?
+        path = LibMacOSMenu.recent_rom(index)
+        path.null? ? nil : String.new(path)
       end
 
       def self.open_rom : String?

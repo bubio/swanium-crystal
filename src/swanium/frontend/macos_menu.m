@@ -6,6 +6,8 @@ static int pending_action = 0;
 static NSTextField *status_label = nil;
 static NSSlider *status_volume = nil;
 static NSString *opened_rom_path = nil;
+static NSMutableArray<NSString *> *recent_rom_paths = nil;
+static NSMenu *recent_menu = nil;
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -54,6 +56,7 @@ void swanium_macos_menu_build(void) {
     application_root = [[NSMenuItem alloc] initWithTitle:@"Swanium Crystal" action:nil keyEquivalent:@""];
     [bar insertItem:application_root atIndex:0];
   }
+  application_root.title = @"Swanium Crystal";
   NSMenu *application = submenu(application_root.title);
   application_root.submenu = application;
   [application addItem:item(@"About Swanium Crystal", 41)];
@@ -67,12 +70,9 @@ void swanium_macos_menu_build(void) {
   [application addItem:quit];
   NSMenu *emulation = submenu(@"Emulation");
   [emulation addItem:item(@"Open ROM…", 1)];
-  NSMenu *recent = submenu(@"Open Recent");
-  NSMenuItem *no_recent = [[NSMenuItem alloc] initWithTitle:@"No Recent ROMs" action:nil keyEquivalent:@""];
-  no_recent.enabled = NO;
-  [recent addItem:no_recent];
+  recent_menu = submenu(@"Open Recent");
   NSMenuItem *recent_root = [[NSMenuItem alloc] initWithTitle:@"Open Recent" action:nil keyEquivalent:@""];
-  recent_root.submenu = recent;
+  recent_root.submenu = recent_menu;
   [emulation addItem:recent_root];
   [emulation addItem:[NSMenuItem separatorItem]];
   NSMenu *save_state = submenu(@"Save State");
@@ -111,6 +111,28 @@ void swanium_macos_menu_build(void) {
   renderer_root.submenu = renderer;
   [view addItem:renderer_root];
   add_top_level(bar, @"View", view);
+}
+
+void swanium_macos_menu_set_recent_roms(const char **paths) {
+  if (recent_menu == nil) return;
+  [recent_menu removeAllItems];
+  recent_rom_paths = [[NSMutableArray alloc] init];
+  for (NSInteger index = 0; paths[index] != NULL && index < 10; index++) {
+    NSString *path = [NSString stringWithUTF8String:paths[index]];
+    [recent_rom_paths addObject:path];
+    [recent_menu addItem:item(path.lastPathComponent, 300 + index)];
+  }
+  if (recent_rom_paths.count == 0) {
+    NSMenuItem *empty = [[NSMenuItem alloc] initWithTitle:@"No Recent ROMs" action:nil keyEquivalent:@""];
+    empty.enabled = NO;
+    [recent_menu addItem:empty];
+  }
+}
+
+const char *swanium_macos_menu_recent_rom(int index) {
+  if (index < 0 || index >= recent_rom_paths.count) return NULL;
+  opened_rom_path = recent_rom_paths[index];
+  return opened_rom_path.UTF8String;
 }
 
 int swanium_macos_menu_take_action(void) {

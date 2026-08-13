@@ -63,6 +63,7 @@ module Swanium
         loop do
           extension = File.extname(current_path).downcase
           raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
+          Platform::StateStore.default.record_recent_rom(current_path)
           cartridge = Core::CartridgeImage.from_bytes(File.read(current_path).to_slice)
           title = File.basename(current_path)
           next_path = Platform::Sdl.play(cartridge, title)

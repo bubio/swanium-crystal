@@ -1,5 +1,6 @@
 require "uing"
 require "./macos_menu"
+require "../platform/state_store"
 
 module Swanium
   module Frontend
@@ -31,6 +32,7 @@ module Swanium
 
       def install_menus : Nil
         MacosMenu.install
+        MacosMenu.set_recent_roms(Platform::StateStore.default.recent_roms)
       end
 
       def pump : Nil
@@ -39,6 +41,8 @@ module Swanium
         case action
         when MacosMenu::OPEN_ROM
           @open_rom_path = MacosMenu.open_rom
+        when MacosMenu::RECENT_BASE..(MacosMenu::RECENT_BASE + 9)
+          @open_rom_path = MacosMenu.recent_rom(action - MacosMenu::RECENT_BASE)
         when MacosMenu::ABOUT
           MacosMenu.show_about
         when MacosMenu::SETTINGS
