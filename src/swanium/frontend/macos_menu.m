@@ -20,6 +20,10 @@ static const CGFloat settings_group_spacing = 24.0;
 static const CGFloat settings_label_width = 172.0;
 static const CGFloat settings_control_width = 200.0;
 static const CGFloat settings_control_height = 26.0;
+static const CGFloat settings_initial_height = 520.0;
+static const CGFloat settings_window_chrome_height = 32.0;
+static const CGFloat settings_minimum_height = 260.0;
+static const CGFloat settings_document_height = 480.0;
 
 static int sdl_scancode_for_macos_keycode(unsigned short keycode) {
   switch (keycode) {
@@ -130,6 +134,17 @@ static void install_settings_stack(NSStackView *stack, NSView *content) {
     [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-settings_content_inset],
     [stack.topAnchor constraintEqualToAnchor:content.topAnchor constant:settings_content_inset],
   ]];
+}
+
+static NSView *settings_scroll_content(NSView *content) {
+  NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:content.bounds];
+  scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  scroll.borderType = NSNoBorder;
+  scroll.hasVerticalScroller = YES;
+  scroll.hasHorizontalScroller = NO;
+  scroll.autohidesScrollers = YES;
+  scroll.documentView = content;
+  return scroll;
 }
 
 static void add_top_level(NSMenu *bar, NSString *title, NSMenu *menu) {
@@ -313,11 +328,16 @@ void swanium_macos_menu_show_error(const char *message) {
 void swanium_macos_settings_show(void) {
   if (main_window == nil) return;
   if (settings_panel == nil) {
-    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 520)
-      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, settings_initial_height)
+      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
     settings_panel.title = @"Swanium Crystal Settings";
+    // NSWindow minSize/maxSize use the complete frame, including title bar.
+    // Keep the current initial frame as the maximum and permit half-height.
+    settings_panel.minSize = NSMakeSize(460, (settings_initial_height + settings_window_chrome_height) / 2.0);
+    settings_panel.maxSize = NSMakeSize(460, settings_initial_height + settings_window_chrome_height);
     NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, settings_outer_inset, 428, 488)];
-    NSView *keyboard = [[NSView alloc] initWithFrame:tabs.bounds];
+    tabs.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    NSView *keyboard = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 428, settings_document_height)];
     NSStackView *keyboard_stack = settings_stack();
     NSArray<NSString *> *labels = @[@"X Pad Up", @"X Pad Right", @"X Pad Down", @"X Pad Left", @"Y Pad Up", @"Y Pad Right", @"Y Pad Down", @"Y Pad Left", @"A Button", @"B Button", @"Start"];
     NSStackView *last_keyboard_row = nil;
@@ -336,10 +356,10 @@ void swanium_macos_settings_show(void) {
     install_settings_stack(keyboard_stack, keyboard);
     NSTabViewItem *keyboard_tab = [[NSTabViewItem alloc] initWithIdentifier:@"keyboard"];
     keyboard_tab.label = @"Keyboard";
-    keyboard_tab.view = keyboard;
+    keyboard_tab.view = settings_scroll_content(keyboard);
     [tabs addTabViewItem:keyboard_tab];
 
-    NSView *controller = [[NSView alloc] initWithFrame:tabs.bounds];
+    NSView *controller = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 428, settings_document_height)];
     NSStackView *controller_stack = settings_stack();
     NSArray<NSString *> *directions = @[@"D-pad", @"Left stick", @"Right stick"];
     NSStackView *last_direction_row = nil;
@@ -373,7 +393,7 @@ void swanium_macos_settings_show(void) {
     install_settings_stack(controller_stack, controller);
     NSTabViewItem *controller_tab = [[NSTabViewItem alloc] initWithIdentifier:@"controller"];
     controller_tab.label = @"Controller";
-    controller_tab.view = controller;
+    controller_tab.view = settings_scroll_content(controller);
     [tabs addTabViewItem:controller_tab];
     [settings_panel.contentView addSubview:tabs];
   }
