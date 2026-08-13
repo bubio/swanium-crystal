@@ -6,7 +6,7 @@
 ## 共通の操作
 
 - `Open ROM…`: `.ws` または `.wsc` を選び、実行中のROMを置き換える。
-- `Open Recent`: 最近開いたROMのサブメニュー。
+- `Open Recent`: 最近開いたROMのサブメニュー。`Clear History`で履歴を消去できる。
 - `Save State` / `Load State`: スロットを選ぶサブメニュー。
 - `Pause`: エミュレーションの停止と再開を切り替える。
 - `Reset`: 現在のROMをリセットする。

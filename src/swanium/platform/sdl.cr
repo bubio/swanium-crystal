@@ -191,6 +191,8 @@ module Swanium
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
           fullscreen = false
+          scale = 3
+          renderer_mode = 0
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -213,14 +215,16 @@ module Swanium
               machine.cpu.reset(0_u16, 0_u16)
               LibSDL.clear_queued_audio(audio_device)
             end
-            if scale = controls.take_scale_request
+            if requested_scale = controls.take_scale_request
+              scale = requested_scale
               LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
               check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
             end
-            if renderer_mode = controls.take_renderer_request
+            if requested_renderer = controls.take_renderer_request
+              renderer_mode = requested_renderer
               check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
             end
             if slot = controls.take_save_state_request
@@ -257,6 +261,7 @@ module Swanium
               fps_anchor = LibSDL.get_performance_counter
             end
             controls.update_status("Video demo", fps, debugger.paused)
+            controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
             check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
             check(LibSDL.render_clear(renderer))
             render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
@@ -357,6 +362,8 @@ module Swanium
           fps_anchor = LibSDL.get_performance_counter
           fps_frames = 0_u32
           fullscreen = false
+          scale = 3
+          renderer_mode = 0
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
@@ -384,14 +391,16 @@ module Swanium
               machine.cpu.reset(0xFFFF_u16, 0_u16)
               LibSDL.clear_queued_audio(audio_device)
             end
-            if scale = controls.take_scale_request
+            if requested_scale = controls.take_scale_request
+              scale = requested_scale
               LibSDL.set_window_size(window, display_width * scale, display_height * scale + 22)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
               check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
             end
-            if renderer_mode = controls.take_renderer_request
+            if requested_renderer = controls.take_renderer_request
+              renderer_mode = requested_renderer
               check(LibSDL.set_texture_scale_mode(texture, renderer_mode))
             end
             if slot = controls.take_save_state_request
@@ -442,6 +451,7 @@ module Swanium
               fps_anchor = LibSDL.get_performance_counter
             end
             controls.update_status(title, fps, debugger.paused)
+            controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
             check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
             check(LibSDL.render_clear(renderer))
             render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
@@ -537,17 +547,18 @@ module Swanium
         state = LibSDL.get_keyboard_state(Pointer(Int32).null)
         keys = 0_u16
         # Match Swanium's established horizontal default bindings exactly.
-        keys |= Core::WonderSwanKey::X1 if state[SC_UP] != 0
-        keys |= Core::WonderSwanKey::X2 if state[SC_RIGHT] != 0
-        keys |= Core::WonderSwanKey::X3 if state[SC_DOWN] != 0
-        keys |= Core::WonderSwanKey::X4 if state[SC_LEFT] != 0
-        keys |= Core::WonderSwanKey::Y1 if state[SC_W] != 0
-        keys |= Core::WonderSwanKey::Y2 if state[SC_D] != 0
-        keys |= Core::WonderSwanKey::Y3 if state[SC_S] != 0
-        keys |= Core::WonderSwanKey::Y4 if state[SC_A] != 0
-        keys |= Core::WonderSwanKey::A if state[SC_X] != 0
-        keys |= Core::WonderSwanKey::B if state[SC_Z] != 0
-        keys |= Core::WonderSwanKey::Start if state[SC_RETURN] != 0
+        bindings = Frontend::InputBindings.default
+        keys |= Core::WonderSwanKey::X1 if state[bindings.scancode(:x1)] != 0
+        keys |= Core::WonderSwanKey::X2 if state[bindings.scancode(:x2)] != 0
+        keys |= Core::WonderSwanKey::X3 if state[bindings.scancode(:x3)] != 0
+        keys |= Core::WonderSwanKey::X4 if state[bindings.scancode(:x4)] != 0
+        keys |= Core::WonderSwanKey::Y1 if state[bindings.scancode(:y1)] != 0
+        keys |= Core::WonderSwanKey::Y2 if state[bindings.scancode(:y2)] != 0
+        keys |= Core::WonderSwanKey::Y3 if state[bindings.scancode(:y3)] != 0
+        keys |= Core::WonderSwanKey::Y4 if state[bindings.scancode(:y4)] != 0
+        keys |= Core::WonderSwanKey::A if state[bindings.scancode(:a)] != 0
+        keys |= Core::WonderSwanKey::B if state[bindings.scancode(:b)] != 0
+        keys |= Core::WonderSwanKey::Start if state[bindings.scancode(:start)] != 0
         unless controller.null?
           keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, 0) != 0
           keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, 1) != 0

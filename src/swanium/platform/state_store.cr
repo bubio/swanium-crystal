@@ -27,6 +27,25 @@ module Swanium
         @root / "swanium-crystal" / "recent-roms.txt"
       end
 
+      def settings_path : Path
+        @root / "swanium-crystal" / "settings.txt"
+      end
+
+      def settings : Hash(String, String)
+        source = settings_path
+        return Hash(String, String).new unless File.exists?(source)
+        File.read_lines(source).each_with_object(Hash(String, String).new) do |line, result|
+          key, value = line.split('=', 2)
+          result[key] = value if value
+        end
+      end
+
+      def save_settings(values : Hash(String, String)) : Nil
+        destination = settings_path
+        Dir.mkdir_p(destination.parent)
+        File.write(destination, values.keys.sort.map { |key| "#{key}=#{values[key]}" }.join('\n') + '\n')
+      end
+
       def recent_roms : Array(String)
         source = recent_roms_path
         return [] of String unless File.exists?(source)
@@ -40,6 +59,10 @@ module Swanium
         destination = recent_roms_path
         Dir.mkdir_p(destination.parent)
         File.write(destination, entries.first(10).join('\n') + '\n')
+      end
+
+      def clear_recent_roms : Nil
+        File.delete(recent_roms_path) if File.exists?(recent_roms_path)
       end
 
       # The application may inspect the platform-default root while tests and

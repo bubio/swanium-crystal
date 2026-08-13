@@ -40,4 +40,18 @@ describe Swanium::Platform::StateStore do
   it "constructs the default store from the platform root" do
     Swanium::Platform::StateStore.default.path("demo").basename.should eq("demo-0.swcstate")
   end
+
+  it "persists user settings independently from save states" do
+    root = Path["/tmp/swanium-settings-spec"]
+    begin
+      store = Swanium::Platform::StateStore.new(root)
+      store.save_settings({"volume" => "42", "binding.a" => "29"})
+
+      store.settings.should eq({"binding.a" => "29", "volume" => "42"})
+    ensure
+      File.delete(root / "swanium-crystal" / "settings.txt") if File.exists?(root / "swanium-crystal" / "settings.txt")
+      Dir.delete(root / "swanium-crystal") if Dir.exists?(root / "swanium-crystal")
+      Dir.delete(root) if Dir.exists?(root)
+    end
+  end
 end

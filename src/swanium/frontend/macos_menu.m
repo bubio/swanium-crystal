@@ -8,6 +8,10 @@ static NSSlider *status_volume = nil;
 static NSString *opened_rom_path = nil;
 static NSMutableArray<NSString *> *recent_rom_paths = nil;
 static NSMenu *recent_menu = nil;
+static NSMenuItem *pause_item = nil;
+static NSMenuItem *fullscreen_item = nil;
+static NSMenuItem *scale_items[4] = {nil};
+static NSMenuItem *renderer_items[2] = {nil};
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -89,28 +93,47 @@ void swanium_macos_menu_build(void) {
   load_root.submenu = load_state;
   [emulation addItem:load_root];
   [emulation addItem:[NSMenuItem separatorItem]];
-  [emulation addItem:item(@"Pause", 4)];
+  pause_item = item(@"Pause", 4);
+  [emulation addItem:pause_item];
   [emulation addItem:item(@"Reset", 5)];
   add_top_level(bar, @"Emulation", emulation);
 
   NSMenu *view = submenu(@"View");
   NSMenu *scale = submenu(@"Scale");
-  [scale addItem:item(@"1x", 11)];
-  [scale addItem:item(@"2x", 12)];
-  [scale addItem:item(@"3x", 13)];
-  [scale addItem:item(@"4x", 14)];
+  scale_items[0] = item(@"1x", 11);
+  scale_items[1] = item(@"2x", 12);
+  scale_items[2] = item(@"3x", 13);
+  scale_items[3] = item(@"4x", 14);
+  [scale addItem:scale_items[0]];
+  [scale addItem:scale_items[1]];
+  [scale addItem:scale_items[2]];
+  [scale addItem:scale_items[3]];
   NSMenuItem *scale_root = [[NSMenuItem alloc] initWithTitle:@"Scale" action:nil keyEquivalent:@""];
   scale_root.submenu = scale;
   [view addItem:scale_root];
-  [view addItem:item(@"Fullscreen", 20)];
+  fullscreen_item = item(@"Fullscreen", 20);
+  [view addItem:fullscreen_item];
   [view addItem:[NSMenuItem separatorItem]];
   NSMenu *renderer = submenu(@"Renderer");
-  [renderer addItem:item(@"Nearest Neighbor", 31)];
-  [renderer addItem:item(@"Bilinear", 32)];
+  renderer_items[0] = item(@"Nearest Neighbor", 31);
+  renderer_items[1] = item(@"Bilinear", 32);
+  [renderer addItem:renderer_items[0]];
+  [renderer addItem:renderer_items[1]];
   NSMenuItem *renderer_root = [[NSMenuItem alloc] initWithTitle:@"Renderer" action:nil keyEquivalent:@""];
   renderer_root.submenu = renderer;
   [view addItem:renderer_root];
   add_top_level(bar, @"View", view);
+}
+
+void swanium_macos_menu_update_state(BOOL paused, int scale, BOOL fullscreen, int renderer) {
+  pause_item.state = paused ? NSControlStateValueOn : NSControlStateValueOff;
+  fullscreen_item.state = fullscreen ? NSControlStateValueOn : NSControlStateValueOff;
+  for (NSInteger index = 0; index < 4; index++) {
+    scale_items[index].state = scale_items[index].tag == scale + 10 ? NSControlStateValueOn : NSControlStateValueOff;
+  }
+  for (NSInteger index = 0; index < 2; index++) {
+    renderer_items[index].state = index == renderer ? NSControlStateValueOn : NSControlStateValueOff;
+  }
 }
 
 void swanium_macos_menu_set_recent_roms(const char **paths) {
@@ -126,6 +149,9 @@ void swanium_macos_menu_set_recent_roms(const char **paths) {
     NSMenuItem *empty = [[NSMenuItem alloc] initWithTitle:@"No Recent ROMs" action:nil keyEquivalent:@""];
     empty.enabled = NO;
     [recent_menu addItem:empty];
+  } else {
+    [recent_menu addItem:[NSMenuItem separatorItem]];
+    [recent_menu addItem:item(@"Clear History", 310)];
   }
 }
 
@@ -202,6 +228,10 @@ void swanium_macos_status_update(const char *text) {
 
 int swanium_macos_status_volume(void) {
   return status_volume == nil ? 100 : (int)status_volume.integerValue;
+}
+
+void swanium_macos_status_set_volume(int value) {
+  if (status_volume != nil) status_volume.integerValue = MAX(0, MIN(100, value));
 }
 
 int swanium_macos_status_reserved_height_pixels(void *sdl_window) {
