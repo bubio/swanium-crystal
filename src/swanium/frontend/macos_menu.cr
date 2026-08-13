@@ -13,6 +13,7 @@ lib LibMacOSMenu
   fun set_recent_roms = swanium_macos_menu_set_recent_roms(paths : LibC::Char**) : Nil
   fun recent_rom = swanium_macos_menu_recent_rom(index : Int32) : LibC::Char*
   fun update_menu_state = swanium_macos_menu_update_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil
+  fun set_load_slots = swanium_macos_menu_set_load_slots(slots : Int32*) : Nil
 end
 
 module Swanium
@@ -58,6 +59,11 @@ module Swanium
 
       def self.update_menu_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil
         LibMacOSMenu.update_menu_state(paused, scale, fullscreen, renderer)
+      end
+
+      def self.set_load_slots(slots : Array(Bool)) : Nil
+        values = slots.map { |available| available ? 1 : 0 }
+        LibMacOSMenu.set_load_slots(values.to_unsafe)
       end
 
       def self.open_rom : String?

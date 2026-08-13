@@ -92,6 +92,10 @@ module Swanium
         source
       end
 
+      def state_exists?(game_id : String, slot : Int32) : Bool
+        File.exists?(path(game_id, slot))
+      end
+
       def load_cartridge_save(bus : Core::WonderSwanBus, game_id : String) : Nil
         return unless bus.has_save_ram?
         source = cartridge_save_path(game_id)

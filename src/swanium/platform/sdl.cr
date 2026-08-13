@@ -161,6 +161,7 @@ module Swanium
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
           controller = first_controller
+          controls.update_state_slots("demo")
 
           desired = LibSDL::AudioSpec.new
           desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
@@ -229,6 +230,7 @@ module Swanium
             end
             if slot = controls.take_save_state_request
               StateStore.default.save(machine, bus, "demo", slot)
+              controls.update_state_slots("demo")
             end
             if slot = controls.take_load_state_request
               StateStore.default.load(machine, bus, "demo", slot)
@@ -331,6 +333,7 @@ module Swanium
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
           controller = first_controller
+          controls.update_state_slots(title)
 
           desired = LibSDL::AudioSpec.new
           desired.freq = Core::Apu::OUTPUT_SAMPLE_RATE.to_i32
@@ -405,6 +408,7 @@ module Swanium
             end
             if slot = controls.take_save_state_request
               StateStore.default.save(machine, bus, title, slot)
+              controls.update_state_slots(title)
             end
             if slot = controls.take_load_state_request
               StateStore.default.load(machine, bus, title, slot)

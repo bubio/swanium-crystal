@@ -12,6 +12,7 @@ static NSMenuItem *pause_item = nil;
 static NSMenuItem *fullscreen_item = nil;
 static NSMenuItem *scale_items[4] = {nil};
 static NSMenuItem *renderer_items[2] = {nil};
+static NSMenuItem *load_state_items[10] = {nil};
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
@@ -84,7 +85,8 @@ void swanium_macos_menu_build(void) {
   for (NSInteger slot = 0; slot < 10; slot++) {
     NSString *title = [NSString stringWithFormat:@"Slot %ld", (long)slot];
     [save_state addItem:item(title, 100 + slot)];
-    [load_state addItem:item(title, 200 + slot)];
+    load_state_items[slot] = item(title, 200 + slot);
+    [load_state addItem:load_state_items[slot]];
   }
   NSMenuItem *save_root = [[NSMenuItem alloc] initWithTitle:@"Save State" action:nil keyEquivalent:@""];
   save_root.submenu = save_state;
@@ -123,6 +125,12 @@ void swanium_macos_menu_build(void) {
   renderer_root.submenu = renderer;
   [view addItem:renderer_root];
   add_top_level(bar, @"View", view);
+}
+
+void swanium_macos_menu_set_load_slots(const int *slots) {
+  for (NSInteger slot = 0; slot < 10; slot++) {
+    load_state_items[slot].enabled = slots[slot] != 0;
+  }
 }
 
 void swanium_macos_menu_update_state(BOOL paused, int scale, BOOL fullscreen, int renderer) {
