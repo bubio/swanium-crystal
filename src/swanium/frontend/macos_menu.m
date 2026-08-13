@@ -13,6 +13,16 @@ static NSButton *controller_buttons[3] = {nil};
 static NSPopUpButton *direction_popups[3] = {nil};
 static NSInteger keyboard_capture_tag = -1;
 
+// Coordinates are in an NSTabViewItem's content view.  Keep the first row
+// below NSTabView's tab selector; placing it at the tab view's top overlaps
+// the selected tab label.
+static const CGFloat settings_outer_inset = 16.0;
+static const CGFloat settings_label_x = 18.0;
+static const CGFloat settings_control_x = 205.0;
+static const CGFloat settings_row_top = 370.0;
+static const CGFloat settings_row_spacing = 30.0;
+static const CGFloat settings_control_height = 26.0;
+
 static int sdl_scancode_for_macos_keycode(unsigned short keycode) {
   switch (keycode) {
     case 0: return 4; case 1: return 22; case 2: return 7; case 3: return 9;
@@ -275,16 +285,16 @@ void swanium_macos_menu_show_error(const char *message) {
 void swanium_macos_settings_show(void) {
   if (main_window == nil) return;
   if (settings_panel == nil) {
-    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 510)
+    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 460)
       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
     settings_panel.title = @"Swanium Crystal Settings";
-    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(16, 14, 428, 480)];
+    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, 14, 428, 430)];
     NSView *keyboard = [[NSView alloc] initWithFrame:tabs.bounds];
     NSArray<NSString *> *labels = @[@"X Pad Up", @"X Pad Right", @"X Pad Down", @"X Pad Left", @"Y Pad Up", @"Y Pad Right", @"Y Pad Down", @"Y Pad Left", @"A Button", @"B Button", @"Start"];
     for (NSInteger index = 0; index < labels.count; index++) {
-      CGFloat y = 430 - index * 35;
-      [keyboard addSubview:settings_label(labels[index], NSMakeRect(18, y, 170, 22))];
-      keyboard_buttons[index] = settings_capture_button(400 + index, NSMakeRect(205, y - 2, 180, 26));
+      CGFloat y = settings_row_top - index * settings_row_spacing;
+      [keyboard addSubview:settings_label(labels[index], NSMakeRect(settings_label_x, y, 170, 22))];
+      keyboard_buttons[index] = settings_capture_button(400 + index, NSMakeRect(settings_control_x, y - 2, 180, settings_control_height));
       [keyboard addSubview:keyboard_buttons[index]];
     }
     NSButton *keyboard_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
@@ -299,9 +309,9 @@ void swanium_macos_settings_show(void) {
     NSView *controller = [[NSView alloc] initWithFrame:tabs.bounds];
     NSArray<NSString *> *directions = @[@"D-pad", @"Left stick", @"Right stick"];
     for (NSInteger index = 0; index < directions.count; index++) {
-      CGFloat y = 430 - index * 35;
-      [controller addSubview:settings_label(directions[index], NSMakeRect(18, y, 170, 22))];
-      direction_popups[index] = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(205, y - 2, 180, 26) pullsDown:NO];
+      CGFloat y = settings_row_top - index * settings_row_spacing;
+      [controller addSubview:settings_label(directions[index], NSMakeRect(settings_label_x, y, 170, 22))];
+      direction_popups[index] = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(settings_control_x, y - 2, 180, settings_control_height) pullsDown:NO];
       [direction_popups[index] addItemsWithTitles:@[@"Disabled", @"X Pad", @"Y Pad"]];
       direction_popups[index].target = [SwaniumMenuTarget sharedTarget];
       direction_popups[index].action = @selector(activate:);
@@ -310,9 +320,9 @@ void swanium_macos_settings_show(void) {
     }
     NSArray<NSString *> *button_labels = @[@"A Button", @"B Button", @"Start"];
     for (NSInteger index = 0; index < button_labels.count; index++) {
-      CGFloat y = 280 - index * 35;
-      [controller addSubview:settings_label(button_labels[index], NSMakeRect(18, y, 170, 22))];
-      controller_buttons[index] = settings_capture_button(500 + index, NSMakeRect(205, y - 2, 180, 26));
+      CGFloat y = 250 - index * settings_row_spacing;
+      [controller addSubview:settings_label(button_labels[index], NSMakeRect(settings_label_x, y, 170, 22))];
+      controller_buttons[index] = settings_capture_button(500 + index, NSMakeRect(settings_control_x, y - 2, 180, settings_control_height));
       [controller addSubview:controller_buttons[index]];
     }
     NSButton *controller_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
