@@ -1,4 +1,3 @@
-require "uing"
 require "./macos_menu"
 require "../platform/state_store"
 require "./input_bindings"
@@ -14,7 +13,6 @@ module Swanium
       getter quit_requested : Bool
 
       def self.start(title : String) : NativeControls
-        UIng.init
         new(title)
       end
 
@@ -24,14 +22,13 @@ module Swanium
         @save_state_requested = nil.as(Int32?)
         @load_state_requested = nil.as(Int32?)
         @open_rom_path = nil.as(String?)
-        @settings_window = nil.as(UIng::Window?)
+        @keyboard_capture = nil.as(Int32?)
+        @controller_capture = nil.as(Int32?)
         @reset_requested = false
         @scale_requested = nil.as(Int32?)
         @fullscreen_requested = false
         @renderer_requested = nil.as(Int32?)
         @volume = saved_volume
-
-        UIng.main_steps
       end
 
       def install_menus : Nil
@@ -40,7 +37,6 @@ module Swanium
       end
 
       def pump : Nil
-        UIng.main_step(false)
         action = MacosMenu.take_action
         case action
         when MacosMenu::OPEN_ROM
@@ -54,6 +50,26 @@ module Swanium
           MacosMenu.show_about
         when MacosMenu::SETTINGS
           show_settings
+        when 400..410
+          @keyboard_capture = action - 400
+        when 500..502
+          @controller_capture = action - 500
+        when 420
+          InputBindings.default.reset_keyboard
+          @keyboard_capture = nil
+          sync_settings
+        when 520
+          InputBindings.default.reset_controller
+          @controller_capture = nil
+          sync_settings
+        when 6000..6022
+          source = action // 10 - 600
+          destination = action % 10
+          key = ["dpad", "left_stick", "right_stick"][source]?
+          InputBindings.default.set_controller_destination(key, destination) if key && destination.in?(0..2)
+          sync_settings
+        when 7000..7999
+          capture_keyboard(action - 7000)
         when MacosMenu::QUIT
           @quit_requested = true
         when MacosMenu::SAVE_STATE_BASE..(MacosMenu::SAVE_STATE_BASE + 9)
@@ -161,10 +177,35 @@ module Swanium
       def attach_status(window : Void*) : Nil
         MacosMenu.attach_status(window)
         MacosMenu.volume = @volume
+        sync_settings
       end
 
       def detach_status : Nil
         MacosMenu.detach_status
+      end
+
+      def capture_keyboard(scancode : Int32) : Bool
+        if scancode == 41 && (@keyboard_capture || @controller_capture)
+          @keyboard_capture = nil
+          @controller_capture = nil
+          sync_settings
+          return true
+        end
+        action = @keyboard_capture
+        return false unless action
+        InputBindings.default.set(InputBindings::ACTIONS[action], scancode)
+        @keyboard_capture = nil
+        sync_settings
+        true
+      end
+
+      def capture_controller_button(button : Int32) : Bool
+        action = @controller_capture
+        return false unless action
+        InputBindings.default.set_controller_button([:a, :b, :start][action], button)
+        @controller_capture = nil
+        sync_settings
+        true
       end
 
       def volume : Int32
@@ -181,60 +222,19 @@ module Swanium
       end
 
       def close : Nil
-        @settings_window.try do |window|
-          window.destroy unless window.released?
-        end
-        UIng.uninit
       end
 
       private def show_settings : Nil
-        if window = @settings_window
-          window.show
-          return
-        end
+        MacosMenu.show_settings
+        sync_settings
+      end
 
-        form = UIng::Form.new(padded: true)
-        volume = UIng::Slider.new(0, 100, @volume)
-        volume.on_changed do |value|
-          @volume = value.clamp(0, 100)
-          MacosMenu.volume = @volume
-          save_volume
-        end
-        form.append("Volume", volume)
-        InputBindings::ACTIONS.each do |action|
-          selection = UIng::Combobox.new(InputBindings.option_names)
-          selection.selected = InputBindings.option_index(InputBindings.default.scancode(action))
-          selection.on_selected do |index|
-            InputBindings.default.set(action, InputBindings.option_scancode(index))
-          end
-          form.append(InputBindings.action_label(action), selection)
-        end
-        controller_form = UIng::Form.new(padded: true)
-        {"X pad: D-pad" => "x_dpad", "X pad: left stick" => "x_left_stick", "Y pad: right stick" => "y_right_stick"}.each do |label, key|
-          enabled = UIng::Checkbox.new(label)
-          enabled.checked = InputBindings.default.controller_enabled?(key)
-          enabled.on_toggled { |checked| InputBindings.default.set_controller_enabled(key, checked) }
-          controller_form.append("", enabled)
-        end
-        {"A button" => :a, "B button" => :b, "Start" => :start}.each do |label, action|
-          selection = UIng::Combobox.new(InputBindings.controller_button_names)
-          selection.selected = InputBindings.controller_button_index(InputBindings.default.controller_button(action))
-          selection.on_selected { |index| InputBindings.default.set_controller_button(action, InputBindings.controller_button_value(index)) }
-          controller_form.append(label, selection)
-        end
-        controls = UIng::Box.new(:vertical, padded: true)
-        controls.append(form)
-        controls.append(UIng::Label.new("Controller"))
-        controls.append(controller_form)
-        window = UIng::Window.new("Swanium Crystal Settings", 400, 690, margined: true)
-        window.child = controls
-        window.set_position(x: 500, y: 180)
-        window.on_closing do
-          @settings_window = nil
-          true
-        end
-        @settings_window = window
-        window.show
+      private def sync_settings : Nil
+        bindings = InputBindings.default
+        keyboard = InputBindings::ACTIONS.map { |action| InputBindings.option_name(bindings.scancode(action)) }
+        buttons = [:a, :b, :start].map { |action| InputBindings.controller_button_name(bindings.controller_button(action)) }
+        directions = [bindings.controller_destination("dpad", 1), bindings.controller_destination("left_stick", 1), bindings.controller_destination("right_stick", 2)]
+        MacosMenu.sync_settings(keyboard, buttons, directions)
       end
 
       private def saved_volume : Int32

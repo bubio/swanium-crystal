@@ -6,6 +6,8 @@ lib LibMacOSMenu
   fun open_rom = swanium_macos_menu_open_rom : LibC::Char*
   fun show_about = swanium_macos_menu_show_about : Nil
   fun show_error = swanium_macos_menu_show_error(message : LibC::Char*) : Nil
+  fun show_settings = swanium_macos_settings_show : Nil
+  fun sync_settings = swanium_macos_settings_sync(keyboard : LibC::Char**, buttons : LibC::Char**, directions : Int32*) : Nil
   fun attach_status = swanium_macos_status_attach_sdl_window(window : Void*) : Nil
   fun detach_status = swanium_macos_status_detach : Nil
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
@@ -81,6 +83,16 @@ module Swanium
 
       def self.show_error(message : String) : Nil
         LibMacOSMenu.show_error(message)
+      end
+
+      def self.show_settings : Nil
+        LibMacOSMenu.show_settings
+      end
+
+      def self.sync_settings(keyboard : Array(String), buttons : Array(String), directions : Array(Int32)) : Nil
+        keyboard_pointers = keyboard.map(&.to_unsafe) << Pointer(LibC::Char).null
+        button_pointers = buttons.map(&.to_unsafe) << Pointer(LibC::Char).null
+        LibMacOSMenu.sync_settings(keyboard_pointers.to_unsafe, button_pointers.to_unsafe, directions.to_unsafe)
       end
 
       def self.attach_status(window : Void*) : Nil

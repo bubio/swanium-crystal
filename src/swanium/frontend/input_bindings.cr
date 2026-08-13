@@ -42,6 +42,11 @@ module Swanium
         save
       end
 
+      def reset_keyboard : Nil
+        ACTIONS.each { |action| @scancodes[action] = DEFAULTS[action] }
+        save
+      end
+
       def self.action_label(action : Symbol) : String
         {
           x1: "X pad Up", x2: "X pad Right", x3: "X pad Down", x4: "X pad Left",
@@ -74,8 +79,27 @@ module Swanium
         Platform::StateStore.default.save_settings(settings)
       end
 
+      def reset_controller : Nil
+        settings = Platform::StateStore.default.settings
+        ["controller.a", "controller.b", "controller.start", "controller.dpad", "controller.left_stick", "controller.right_stick"].each do |key|
+          settings.delete(key)
+        end
+        Platform::StateStore.default.save_settings(settings)
+      end
+
       def controller_enabled?(name : String, default : Bool = true) : Bool
         Platform::StateStore.default.settings["controller.#{name}"]?.try { |value| value == "true" } || default
+      end
+
+      # 0 = disabled, 1 = X pad, 2 = Y pad.
+      def controller_destination(name : String, default : Int32) : Int32
+        Platform::StateStore.default.settings["controller.#{name}"]?.try(&.to_i?).try(&.clamp(0, 2)) || default
+      end
+
+      def set_controller_destination(name : String, destination : Int32) : Nil
+        settings = Platform::StateStore.default.settings
+        settings["controller.#{name}"] = destination.clamp(0, 2).to_s
+        Platform::StateStore.default.save_settings(settings)
       end
 
       def set_controller_enabled(name : String, enabled : Bool) : Nil
@@ -94,6 +118,14 @@ module Swanium
 
       def self.controller_button_value(index : Int32) : Int32
         CONTROLLER_BUTTON_OPTIONS[index.clamp(0, CONTROLLER_BUTTON_OPTIONS.size - 1)][1]
+      end
+
+      def self.option_name(scancode : Int32) : String
+        OPTIONS.find { |option| option[1] == scancode }.try(&.[0]) || "Unknown"
+      end
+
+      def self.controller_button_name(button : Int32) : String
+        CONTROLLER_BUTTON_OPTIONS.find { |option| option[1] == button }.try(&.[0]) || "Button #{button}"
       end
 
       private def load : Nil

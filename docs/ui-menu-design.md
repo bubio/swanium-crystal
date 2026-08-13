@@ -14,9 +14,18 @@
 - `Renderer`: Nearest NeighborとBilinearを選ぶサブメニュー。
 - `Escape`: フルスクリーン中は通常ウィンドウへ戻る。アプリケーションは終了しない。
 
-SDL GameController対応のゲームパッドは、D-padと左スティックをXパッド、右スティックをYパッド、A／B／Startを各ボタンへ割り当てる。Settingsから各方向入力の有効化とA／B／Startの物理ボタンを変更できる。接続・切断は実行中に検出する。
+SDL GameController対応のゲームパッドは、D-padと左スティックをXパッド、右スティックをYパッド、A／B／Startを各ボタンへ割り当てる。接続・切断は実行中に検出する。
 
 画面の向きはROMヘッダーの縦持ち／横持ち情報から自動決定する。手動回転は提供しない。
+
+## Settings（macOS）
+
+SettingsはSDLウィンドウの子となる独立したネイティブパネルで、メインウィンドウ中央に表示する。音量はステータスバーの操作に限定し、Settingsには置かない。
+
+- `Keyboard` タブ: X/Yパッド、A、B、Startの11項目。項目を押して次のキー入力を割り当て、`Escape`は割り当てずにキャプチャを取り消す。`Restore Defaults`で標準キーへ戻す。
+- `Controller` タブ: D-pad、左スティック、右スティックの出力先を`Disabled` / `X Pad` / `Y Pad`から選ぶ。A、B、Startは項目を押して次のゲームパッドボタンを割り当てる。`Restore Defaults`はD-pad・左スティックをX Pad、右スティックをY Pad、A/B/Startを標準ボタンへ戻す。
+
+変更は選択・キャプチャ完了時にただちに反映し、次回起動にも保存する。
 
 ## ステートセーブ
 

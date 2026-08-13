@@ -6,6 +6,32 @@ static int pending_action = 0;
 static NSTextField *status_label = nil;
 static NSSlider *status_volume = nil;
 static NSVisualEffectView *status_footer = nil;
+static __weak NSWindow *main_window = nil;
+static NSPanel *settings_panel = nil;
+static NSButton *keyboard_buttons[11] = {nil};
+static NSButton *controller_buttons[3] = {nil};
+static NSPopUpButton *direction_popups[3] = {nil};
+static NSInteger keyboard_capture_tag = -1;
+
+static int sdl_scancode_for_macos_keycode(unsigned short keycode) {
+  switch (keycode) {
+    case 0: return 4; case 1: return 22; case 2: return 7; case 3: return 9;
+    case 4: return 11; case 5: return 10; case 6: return 29; case 7: return 27;
+    case 8: return 6; case 9: return 25; case 11: return 5; case 12: return 20;
+    case 13: return 26; case 14: return 8; case 15: return 21; case 16: return 28;
+    case 17: return 23; case 18: return 30; case 19: return 31; case 20: return 32;
+    case 21: return 33; case 22: return 35; case 23: return 34; case 24: return 46;
+    case 25: return 38; case 26: return 36; case 27: return 45; case 28: return 37;
+    case 29: return 39; case 30: return 48; case 31: return 18; case 32: return 24;
+    case 33: return 47; case 34: return 12; case 35: return 19; case 36: return 40;
+    case 37: return 15; case 38: return 13; case 39: return 52; case 40: return 14;
+    case 41: return 51; case 42: return 49; case 43: return 54; case 44: return 56;
+    case 45: return 17; case 46: return 16; case 47: return 55; case 48: return 43;
+    case 49: return 44; case 50: return 53; case 51: return 42; case 53: return 41;
+    case 123: return 80; case 124: return 79; case 125: return 81; case 126: return 82;
+    default: return -1;
+  }
+}
 static NSString *opened_rom_path = nil;
 static NSMutableArray<NSString *> *recent_rom_paths = nil;
 static NSMenu *recent_menu = nil;
@@ -19,7 +45,7 @@ static NSMenuItem *load_state_root = nil;
 
 @interface SwaniumMenuTarget : NSObject
 + (instancetype)sharedTarget;
-- (void)activate:(NSMenuItem *)sender;
+- (void)activate:(id)sender;
 @end
 
 @implementation SwaniumMenuTarget
@@ -29,7 +55,17 @@ static NSMenuItem *load_state_root = nil;
   dispatch_once(&once, ^{ target = [[self alloc] init]; });
   return target;
 }
-- (void)activate:(NSMenuItem *)sender { pending_action = (int)sender.tag; }
+- (void)activate:(id)sender {
+  if ([sender isKindOfClass:[NSPopUpButton class]]) {
+    pending_action = (int)[sender tag] * 10 + (int)[sender indexOfSelectedItem];
+  } else {
+    pending_action = (int)[sender tag];
+    if ([sender tag] >= 400 && [sender tag] <= 410) {
+      keyboard_capture_tag = [sender tag];
+      [(NSButton *)sender setTitle:@"Press a key…"];
+    }
+  }
+}
 @end
 
 static NSMenuItem *item(NSString *title, NSInteger tag) {
@@ -44,6 +80,20 @@ static NSMenu *submenu(NSString *title) {
   return menu;
 }
 
+static NSTextField *settings_label(NSString *text, NSRect frame) {
+  NSTextField *label = [NSTextField labelWithString:text];
+  label.frame = frame;
+  label.font = [NSFont systemFontOfSize:13];
+  return label;
+}
+
+static NSButton *settings_capture_button(NSInteger tag, NSRect frame) {
+  NSButton *button = [NSButton buttonWithTitle:@"Press a key…" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
+  button.tag = tag;
+  button.frame = frame;
+  return button;
+}
+
 static void add_top_level(NSMenu *bar, NSString *title, NSMenu *menu) {
   NSMenuItem *root = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
   root.submenu = menu;
@@ -52,6 +102,19 @@ static void add_top_level(NSMenu *bar, NSString *title, NSMenu *menu) {
 
 void swanium_macos_menu_build(void) {
   [NSApplication sharedApplication];
+  static id key_monitor = nil;
+  if (key_monitor == nil) {
+    key_monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
+      if (keyboard_capture_tag < 0) return event;
+      int scancode = sdl_scancode_for_macos_keycode(event.keyCode);
+      if (scancode >= 0) {
+        pending_action = 7000 + scancode;
+        keyboard_capture_tag = -1;
+        return nil;
+      }
+      return event;
+    }];
+  }
   NSMenu *bar = NSApp.mainMenu;
   if (bar == nil) {
     bar = [[NSMenu alloc] initWithTitle:@"Swanium Crystal"];
@@ -209,6 +272,71 @@ void swanium_macos_menu_show_error(const char *message) {
   [alert runModal];
 }
 
+void swanium_macos_settings_show(void) {
+  if (main_window == nil) return;
+  if (settings_panel == nil) {
+    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, 510)
+      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+    settings_panel.title = @"Swanium Crystal Settings";
+    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(16, 14, 428, 480)];
+    NSView *keyboard = [[NSView alloc] initWithFrame:tabs.bounds];
+    NSArray<NSString *> *labels = @[@"X Pad Up", @"X Pad Right", @"X Pad Down", @"X Pad Left", @"Y Pad Up", @"Y Pad Right", @"Y Pad Down", @"Y Pad Left", @"A Button", @"B Button", @"Start"];
+    for (NSInteger index = 0; index < labels.count; index++) {
+      CGFloat y = 430 - index * 35;
+      [keyboard addSubview:settings_label(labels[index], NSMakeRect(18, y, 170, 22))];
+      keyboard_buttons[index] = settings_capture_button(400 + index, NSMakeRect(205, y - 2, 180, 26));
+      [keyboard addSubview:keyboard_buttons[index]];
+    }
+    NSButton *keyboard_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
+    keyboard_defaults.frame = NSMakeRect(250, 15, 135, 26);
+    keyboard_defaults.tag = 420;
+    [keyboard addSubview:keyboard_defaults];
+    NSTabViewItem *keyboard_tab = [[NSTabViewItem alloc] initWithIdentifier:@"keyboard"];
+    keyboard_tab.label = @"Keyboard";
+    keyboard_tab.view = keyboard;
+    [tabs addTabViewItem:keyboard_tab];
+
+    NSView *controller = [[NSView alloc] initWithFrame:tabs.bounds];
+    NSArray<NSString *> *directions = @[@"D-pad", @"Left stick", @"Right stick"];
+    for (NSInteger index = 0; index < directions.count; index++) {
+      CGFloat y = 430 - index * 35;
+      [controller addSubview:settings_label(directions[index], NSMakeRect(18, y, 170, 22))];
+      direction_popups[index] = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(205, y - 2, 180, 26) pullsDown:NO];
+      [direction_popups[index] addItemsWithTitles:@[@"Disabled", @"X Pad", @"Y Pad"]];
+      direction_popups[index].target = [SwaniumMenuTarget sharedTarget];
+      direction_popups[index].action = @selector(activate:);
+      direction_popups[index].tag = 600 + index;
+      [controller addSubview:direction_popups[index]];
+    }
+    NSArray<NSString *> *button_labels = @[@"A Button", @"B Button", @"Start"];
+    for (NSInteger index = 0; index < button_labels.count; index++) {
+      CGFloat y = 280 - index * 35;
+      [controller addSubview:settings_label(button_labels[index], NSMakeRect(18, y, 170, 22))];
+      controller_buttons[index] = settings_capture_button(500 + index, NSMakeRect(205, y - 2, 180, 26));
+      [controller addSubview:controller_buttons[index]];
+    }
+    NSButton *controller_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
+    controller_defaults.frame = NSMakeRect(250, 15, 135, 26);
+    controller_defaults.tag = 520;
+    [controller addSubview:controller_defaults];
+    NSTabViewItem *controller_tab = [[NSTabViewItem alloc] initWithIdentifier:@"controller"];
+    controller_tab.label = @"Controller";
+    controller_tab.view = controller;
+    [tabs addTabViewItem:controller_tab];
+    [settings_panel.contentView addSubview:tabs];
+  }
+  NSRect parent = main_window.frame;
+  [settings_panel setFrameOrigin:NSMakePoint(NSMidX(parent) - settings_panel.frame.size.width / 2, NSMidY(parent) - settings_panel.frame.size.height / 2)];
+  [main_window addChildWindow:settings_panel ordered:NSWindowAbove];
+  [settings_panel makeKeyAndOrderFront:nil];
+}
+
+void swanium_macos_settings_sync(const char **keyboard, const char **buttons, const int *directions) {
+  for (NSInteger index = 0; index < 11; index++) keyboard_buttons[index].title = [NSString stringWithUTF8String:keyboard[index]];
+  for (NSInteger index = 0; index < 3; index++) controller_buttons[index].title = [NSString stringWithUTF8String:buttons[index]];
+  for (NSInteger index = 0; index < 3; index++) [direction_popups[index] selectItemAtIndex:directions[index]];
+}
+
 void swanium_macos_status_attach(void *native_window) {
   NSWindow *window = (__bridge NSWindow *)native_window;
   NSView *content = window.contentView;
@@ -238,6 +366,7 @@ void swanium_macos_status_attach(void *native_window) {
   status_volume.autoresizingMask = NSViewMinXMargin;
   [footer addSubview:status_volume];
   [content addSubview:footer];
+  main_window = window;
   status_footer = footer;
 }
 
@@ -253,6 +382,8 @@ void swanium_macos_status_update(const char *text) {
 }
 
 void swanium_macos_status_detach(void) {
+  [main_window removeChildWindow:settings_panel];
+  [settings_panel orderOut:nil];
   [status_footer removeFromSuperview];
   status_footer = nil;
   status_label = nil;

@@ -217,11 +217,14 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, "video-demo")
+                unless controls.capture_keyboard(keyboard.scancode)
+                  handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, "video-demo")
+                end
                 controls.update_state_slots("video-demo") if keyboard.scancode == SC_F5 && keyboard.repeat == 0_u8
               end
             end
             controls.pump
+            capture_controller_binding(controls, controller)
             if controls.take_pause_request?
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
@@ -398,11 +401,14 @@ module Swanium
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
-                handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, state_id)
+                unless controls.capture_keyboard(keyboard.scancode)
+                  handle_debug_key(keyboard.scancode, keyboard.repeat, debugger, machine, bus, audio_device, state_id)
+                end
                 controls.update_state_slots(state_id) if keyboard.scancode == SC_F5 && keyboard.repeat == 0_u8
               end
             end
             controls.pump
+            capture_controller_binding(controls, controller)
             if path = controls.take_open_rom_path
               opened_rom_path = path
               running = false
@@ -595,24 +601,37 @@ module Swanium
           keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, bindings.controller_button(:a)) != 0
           keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, bindings.controller_button(:b)) != 0
           keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, bindings.controller_button(:start)) != 0
-          if bindings.controller_enabled?("x_dpad")
-            keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
-            keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
-            keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
-            keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
-          end
-          if bindings.controller_enabled?("x_left_stick")
-            keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
-              LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), Core::WonderSwanKey::X1,
-              Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
-          end
-          if bindings.controller_enabled?("y_right_stick")
-            keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
-              LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), Core::WonderSwanKey::Y1,
-              Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
-          end
+          keys = apply_dpad(keys, controller, bindings.controller_destination("dpad", 1))
+          keys = apply_stick_destination(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
+            LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), bindings.controller_destination("left_stick", 1))
+          keys = apply_stick_destination(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
+            LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), bindings.controller_destination("right_stick", 2))
         end
         {keys, state[SC_ESCAPE] != 0}
+      end
+
+      private def self.apply_dpad(keys : UInt16, controller : Void*, destination : Int32) : UInt16
+        case destination
+        when 1
+          keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
+          keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
+          keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
+          keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+        when 2
+          keys |= Core::WonderSwanKey::Y1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
+          keys |= Core::WonderSwanKey::Y3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
+          keys |= Core::WonderSwanKey::Y4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
+          keys |= Core::WonderSwanKey::Y2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+        end
+        keys
+      end
+
+      private def self.apply_stick_destination(keys : UInt16, horizontal : Int16, vertical : Int16, destination : Int32) : UInt16
+        case destination
+        when 1 then apply_stick(keys, horizontal, vertical, Core::WonderSwanKey::X1, Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
+        when 2 then apply_stick(keys, horizontal, vertical, Core::WonderSwanKey::Y1, Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
+        else        keys
+        end
       end
 
       private def self.apply_stick(keys : UInt16, horizontal : Int16, vertical : Int16,
@@ -623,6 +642,15 @@ module Swanium
         result |= up if vertical < -PAD_DEAD_ZONE
         result |= down if vertical > PAD_DEAD_ZONE
         result
+      end
+
+      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Void*) : Nil
+        return if controller.null?
+        21.times do |button|
+          if LibSDL.game_controller_get_button(controller, button) != 0
+            break if controls.capture_controller_button(button)
+          end
+        end
       end
 
       private def self.rotate_input_right(keys : UInt16) : UInt16
