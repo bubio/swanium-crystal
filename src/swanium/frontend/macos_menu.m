@@ -5,6 +5,7 @@
 static int pending_action = 0;
 static NSTextField *status_label = nil;
 static NSSlider *status_volume = nil;
+static NSVisualEffectView *status_footer = nil;
 static NSString *opened_rom_path = nil;
 static NSMutableArray<NSString *> *recent_rom_paths = nil;
 static NSMenu *recent_menu = nil;
@@ -211,7 +212,7 @@ void swanium_macos_menu_show_error(const char *message) {
 void swanium_macos_status_attach(void *native_window) {
   NSWindow *window = (__bridge NSWindow *)native_window;
   NSView *content = window.contentView;
-  if (content == nil || status_label != nil) return;
+  if (content == nil || status_footer != nil) return;
   const CGFloat height = 22.0;
   NSRect frame = content.bounds;
   NSVisualEffectView *footer = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, height)];
@@ -237,6 +238,7 @@ void swanium_macos_status_attach(void *native_window) {
   status_volume.autoresizingMask = NSViewMinXMargin;
   [footer addSubview:status_volume];
   [content addSubview:footer];
+  status_footer = footer;
 }
 
 void swanium_macos_status_attach_sdl_window(void *sdl_window) {
@@ -248,6 +250,13 @@ void swanium_macos_status_attach_sdl_window(void *sdl_window) {
 
 void swanium_macos_status_update(const char *text) {
   if (status_label != nil) status_label.stringValue = [NSString stringWithUTF8String:text];
+}
+
+void swanium_macos_status_detach(void) {
+  [status_footer removeFromSuperview];
+  status_footer = nil;
+  status_label = nil;
+  status_volume = nil;
 }
 
 int swanium_macos_status_volume(void) {

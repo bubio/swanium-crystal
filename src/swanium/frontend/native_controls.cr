@@ -163,6 +163,10 @@ module Swanium
         MacosMenu.volume = @volume
       end
 
+      def detach_status : Nil
+        MacosMenu.detach_status
+      end
+
       def volume : Int32
         value = MacosMenu.volume
         if value != @volume

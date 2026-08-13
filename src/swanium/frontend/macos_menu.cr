@@ -7,6 +7,7 @@ lib LibMacOSMenu
   fun show_about = swanium_macos_menu_show_about : Nil
   fun show_error = swanium_macos_menu_show_error(message : LibC::Char*) : Nil
   fun attach_status = swanium_macos_status_attach_sdl_window(window : Void*) : Nil
+  fun detach_status = swanium_macos_status_detach : Nil
   fun update_status = swanium_macos_status_update(text : LibC::Char*) : Nil
   fun status_volume = swanium_macos_status_volume : Int32
   fun set_status_volume = swanium_macos_status_set_volume(value : Int32) : Nil
@@ -84,6 +85,10 @@ module Swanium
 
       def self.attach_status(window : Void*) : Nil
         LibMacOSMenu.attach_status(window)
+      end
+
+      def self.detach_status : Nil
+        LibMacOSMenu.detach_status
       end
 
       def self.update_status(text : String) : Nil

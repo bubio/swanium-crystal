@@ -291,6 +291,7 @@ module Swanium
           LibSDL.game_controller_close(controller) unless controller.null?
           LibSDL.destroy_texture(texture) unless texture.null?
           LibSDL.destroy_renderer(renderer) unless renderer.null?
+          controls.detach_status
           LibSDL.destroy_window(window) unless window.null?
           LibSDL.quit
           controls.close
@@ -489,6 +490,7 @@ module Swanium
           LibSDL.game_controller_close(controller) unless controller.null?
           LibSDL.destroy_texture(texture) unless texture.null?
           LibSDL.destroy_renderer(renderer) unless renderer.null?
+          controls.detach_status
           LibSDL.destroy_window(window) unless window.null?
           LibSDL.quit
           controls.close
