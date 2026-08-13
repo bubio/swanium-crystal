@@ -209,8 +209,12 @@ module Swanium
           end
           form.append(InputBindings.action_label(action), selection)
         end
-        window = UIng::Window.new("Swanium Crystal Settings", 360, 430, margined: true)
-        window.child = form
+        controller = UIng::Label.new("Controller\nD-pad / left stick: X pad\nRight stick: Y pad\nA / B / Start: corresponding buttons")
+        controls = UIng::Box.new(:vertical, padded: true)
+        controls.append(form)
+        controls.append(controller)
+        window = UIng::Window.new("Swanium Crystal Settings", 360, 510, margined: true)
+        window.child = controls
         window.on_closing do
           @settings_window = nil
           true

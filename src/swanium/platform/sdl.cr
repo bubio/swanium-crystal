@@ -29,6 +29,18 @@ module Swanium
       EVENT_KEYDOWN              =      0x300_u32
       EVENT_CONTROLLER_ADDED     =      0x650_u32
       EVENT_CONTROLLER_REMOVED   =      0x651_u32
+      PAD_DEAD_ZONE              =     16_000_i16
+      PAD_LEFT_X                 =              0
+      PAD_LEFT_Y                 =              1
+      PAD_RIGHT_X                =              2
+      PAD_RIGHT_Y                =              3
+      PAD_A                      =              0
+      PAD_B                      =              1
+      PAD_START                  =              6
+      PAD_DPAD_UP                =             11
+      PAD_DPAD_DOWN              =             12
+      PAD_DPAD_LEFT              =             13
+      PAD_DPAD_RIGHT             =             14
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -118,6 +130,7 @@ module Swanium
         fun game_controller_close = SDL_GameControllerClose(controller : Void*) : Nil
         fun game_controller_get_attached = SDL_GameControllerGetAttached(controller : Void*) : Int32
         fun game_controller_get_button = SDL_GameControllerGetButton(controller : Void*, button : Int32) : UInt8
+        fun game_controller_get_axis = SDL_GameControllerGetAxis(controller : Void*, axis : Int32) : Int16
         fun get_performance_counter = SDL_GetPerformanceCounter : UInt64
         fun get_performance_frequency = SDL_GetPerformanceFrequency : UInt64
         fun delay = SDL_Delay(milliseconds : UInt32) : Nil
@@ -579,15 +592,31 @@ module Swanium
         keys |= Core::WonderSwanKey::B if state[bindings.scancode(:b)] != 0
         keys |= Core::WonderSwanKey::Start if state[bindings.scancode(:start)] != 0
         unless controller.null?
-          keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, 0) != 0
-          keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, 1) != 0
-          keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, 6) != 0
-          keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, 11) != 0
-          keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, 12) != 0
-          keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, 13) != 0
-          keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, 14) != 0
+          keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, PAD_A) != 0
+          keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, PAD_B) != 0
+          keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, PAD_START) != 0
+          keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
+          keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
+          keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
+          keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+          keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
+            LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), Core::WonderSwanKey::X1,
+            Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
+          keys = apply_stick(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
+            LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), Core::WonderSwanKey::Y1,
+            Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
         end
         {keys, state[SC_ESCAPE] != 0}
+      end
+
+      private def self.apply_stick(keys : UInt16, horizontal : Int16, vertical : Int16,
+                                   up : UInt16, right : UInt16, down : UInt16, left : UInt16) : UInt16
+        result = keys
+        result |= left if horizontal < -PAD_DEAD_ZONE
+        result |= right if horizontal > PAD_DEAD_ZONE
+        result |= up if vertical < -PAD_DEAD_ZONE
+        result |= down if vertical > PAD_DEAD_ZONE
+        result
       end
 
       private def self.rotate_input_right(keys : UInt16) : UInt16
