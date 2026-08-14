@@ -17,7 +17,6 @@ module Swanium
       WINDOW_SHOWN               = 0x00000004_u32
       WINDOW_FULLSCREEN_DESKTOP  = 0x00001001_u32
       RENDERER_ACCELERATED       = 0x00000002_u32
-      RENDERER_PRESENTVSYNC      = 0x00000004_u32
       TEXTUREACCESS_STREAMING    =              1
       PIXELFORMAT_RGBA32         =  376840196_u32 # ABGR8888 on little-endian hosts
       AUDIO_FRAMES_PER_BUFFER    =        256_u16
@@ -25,28 +24,29 @@ module Swanium
       AUDIO_MAX_QUEUE_BYTES      =      9_600_u32 # 100 ms at 24 kHz stereo S16
       AUDIO_ALLOW_RATE_CHANGE    =           0x01
       AUDIO_ALLOW_SAMPLES_CHANGE =           0x08
-      EVENT_QUIT                 =      0x100_u32
-      EVENT_KEYDOWN              =      0x300_u32
-      EVENT_JOYSTICK_ADDED       =      0x605_u32
-      EVENT_JOYSTICK_REMOVED     =      0x606_u32
-      EVENT_CONTROLLER_ADDED     =      0x653_u32
-      EVENT_CONTROLLER_REMOVED   =      0x654_u32
-      PAD_DEAD_ZONE              =     16_000_i16
-      PAD_LEFT_X                 =              0
-      PAD_LEFT_Y                 =              1
-      PAD_RIGHT_X                =              2
-      PAD_RIGHT_Y                =              3
-      PAD_A                      =              0
-      PAD_B                      =              1
-      PAD_START                  =              6
-      PAD_DPAD_UP                =             11
-      PAD_DPAD_DOWN              =             12
-      PAD_DPAD_LEFT              =             13
-      PAD_DPAD_RIGHT             =             14
-      HAT_UP                     =        0x01_u8
-      HAT_RIGHT                  =        0x02_u8
-      HAT_DOWN                   =        0x04_u8
-      HAT_LEFT                   =        0x08_u8
+      FRAME_RATE                 = Core::Apu::MASTER_CLOCK.to_f64 / Core::Machine::CYCLES_PER_FRAME.to_f64
+      EVENT_QUIT                 =  0x100_u32
+      EVENT_KEYDOWN              =  0x300_u32
+      EVENT_JOYSTICK_ADDED       =  0x605_u32
+      EVENT_JOYSTICK_REMOVED     =  0x606_u32
+      EVENT_CONTROLLER_ADDED     =  0x653_u32
+      EVENT_CONTROLLER_REMOVED   =  0x654_u32
+      PAD_DEAD_ZONE              = 16_000_i16
+      PAD_LEFT_X                 =          0
+      PAD_LEFT_Y                 =          1
+      PAD_RIGHT_X                =          2
+      PAD_RIGHT_Y                =          3
+      PAD_A                      =          0
+      PAD_B                      =          1
+      PAD_START                  =          6
+      PAD_DPAD_UP                =         11
+      PAD_DPAD_DOWN              =         12
+      PAD_DPAD_LEFT              =         13
+      PAD_DPAD_RIGHT             =         14
+      HAT_UP                     =    0x01_u8
+      HAT_RIGHT                  =    0x02_u8
+      HAT_DOWN                   =    0x04_u8
+      HAT_LEFT                   =    0x08_u8
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -236,7 +236,7 @@ module Swanium
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
@@ -267,13 +267,14 @@ module Swanium
           event = uninitialized LibSDL::Event
           running = true
           frequency = LibSDL.get_performance_frequency
-          frame_ticks = frequency // 60_u64
+          frame_ticks = wonder_swan_frame_ticks(frequency)
           next_frame = LibSDL.get_performance_counter
+          next_emulation_frame = next_frame
           presented_frames = 0_u32
           audio_underruns = 0_u32
-          fps = 60.0
+          fps = FRAME_RATE
           fps_anchor = LibSDL.get_performance_counter
-          fps_frames = 0_u32
+          emulated_frames = 0_u32
           fullscreen = false
           renderer_mode = 0
           while running && !controls.quit_requested
@@ -336,9 +337,15 @@ module Swanium
             end
             if debugger.paused
               debugger.run_instruction?(machine, bus)
+              next_emulation_frame = LibSDL.get_performance_counter
             else
               Frontend::VideoTestPattern.apply_input(bus, keys)
-              machine.run_wonder_swan_frame(bus, keys)
+              now = LibSDL.get_performance_counter
+              while next_emulation_frame <= now
+                machine.run_wonder_swan_frame(bus, keys)
+                emulated_frames &+= 1_u32
+                next_emulation_frame &+= frame_ticks
+              end
             end
             rgba = machine.framebuffer_rgba
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
@@ -348,11 +355,10 @@ module Swanium
             end
             latency_ms = queued_audio * 1000_u32 // (Core::Apu::OUTPUT_SAMPLE_RATE * 4_u32)
             debugger.render(rgba, machine, bus, latency_ms, audio_underruns)
-            fps_frames &+= 1_u32
             elapsed = LibSDL.get_performance_counter - fps_anchor
             if elapsed >= frequency // 2_u64
-              fps = fps_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
-              fps_frames = 0_u32
+              fps = emulated_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
+              emulated_frames = 0_u32
               fps_anchor = LibSDL.get_performance_counter
             end
             controls.update_status("Video demo", fps, debugger.paused)
@@ -362,16 +368,9 @@ module Swanium
             render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
             LibSDL.render_present(renderer)
             presented_frames &+= 1_u32
-            # Cap presentation to 60 Hz even on 120 Hz ProMotion displays and
-            # when SDL falls back to a renderer without vertical sync.
-            next_frame &+= frame_ticks
-            now = LibSDL.get_performance_counter
-            if next_frame > now
-              milliseconds = ((next_frame - now) * 1000_u64 // frequency).to_u32
-              LibSDL.delay(milliseconds) if milliseconds > 0
-            else
-              next_frame = now
-            end
+            # Pace to the WonderSwan's 159-line frame period, independently of
+            # the host display's refresh rate.
+            next_frame = wait_for_next_frame(next_frame, frame_ticks, frequency)
           end
         ensure
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
@@ -421,7 +420,7 @@ module Swanium
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED | RENDERER_PRESENTVSYNC)
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
           renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
           raise SdlError.new(error_message) if renderer.null?
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
@@ -453,13 +452,13 @@ module Swanium
           event = uninitialized LibSDL::Event
           running = true
           frequency = LibSDL.get_performance_frequency
-          frame_ticks = frequency // 60_u64
+          frame_ticks = wonder_swan_frame_ticks(frequency)
           next_frame = LibSDL.get_performance_counter
           presented_frames = 0_u32
           audio_underruns = 0_u32
-          fps = 60.0
+          fps = FRAME_RATE
           fps_anchor = LibSDL.get_performance_counter
-          fps_frames = 0_u32
+          emulated_frames = 0_u32
           fullscreen = false
           renderer_mode = 0
           while running && !controls.quit_requested
@@ -538,6 +537,7 @@ module Swanium
               frames_run = 0
               while queued_audio < audio_target_bytes(obtained.freq) && frames_run < 4
                 machine.run_wonder_swan_frame(bus, keys)
+                emulated_frames &+= 1_u32
                 queue_audio(audio_device, machine.apu.drain_samples, resampler, controls.volume)
                 queued_audio = LibSDL.get_queued_audio_size(audio_device)
                 frames_run += 1
@@ -553,11 +553,10 @@ module Swanium
                              else
                                rgba
                              end
-            fps_frames &+= 1_u32
             elapsed = LibSDL.get_performance_counter - fps_anchor
             if elapsed >= frequency // 2_u64
-              fps = fps_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
-              fps_frames = 0_u32
+              fps = emulated_frames.to_f64 * frequency.to_f64 / elapsed.to_f64
+              emulated_frames = 0_u32
               fps_anchor = LibSDL.get_performance_counter
             end
             controls.update_status(title, fps, debugger.paused)
@@ -567,14 +566,7 @@ module Swanium
             render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
             LibSDL.render_present(renderer)
             presented_frames &+= 1_u32
-            next_frame &+= frame_ticks
-            now = LibSDL.get_performance_counter
-            if next_frame > now
-              milliseconds = ((next_frame - now) * 1000_u64 // frequency).to_u32
-              LibSDL.delay(milliseconds) if milliseconds > 0
-            else
-              next_frame = now
-            end
+            next_frame = wait_for_next_frame(next_frame, frame_ticks, frequency)
           end
         ensure
           StateStore.default.save_cartridge_save(bus, title)
@@ -623,6 +615,24 @@ module Swanium
 
       private def self.check(result : Int32) : Nil
         raise SdlError.new(error_message) if result != 0
+      end
+
+      private def self.wonder_swan_frame_ticks(frequency : UInt64) : UInt64
+        frequency * Core::Machine::CYCLES_PER_FRAME // Core::Apu::MASTER_CLOCK.to_u64
+      end
+
+      private def self.wait_for_next_frame(previous_frame : UInt64, frame_ticks : UInt64, frequency : UInt64) : UInt64
+        target = previous_frame + frame_ticks
+        now = LibSDL.get_performance_counter
+        return now if target <= now
+
+        milliseconds = ((target - now) * 1000_u64 // frequency).to_u32
+        # SDL_Delay can round a 13 ms sleep to the host's 60 Hz scheduling
+        # quantum. Leave two milliseconds for a precise final wait instead.
+        LibSDL.delay(milliseconds - 2) if milliseconds > 2
+        while LibSDL.get_performance_counter < target
+        end
+        target
       end
 
       private def self.render_game(renderer : Void*, texture : Void*, game_width : Int32, game_height : Int32, reserved_status_height : Int32) : Nil
