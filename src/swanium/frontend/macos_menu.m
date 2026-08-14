@@ -20,6 +20,8 @@ static const CGFloat settings_group_spacing = 24.0;
 static const CGFloat settings_label_width = 172.0;
 static const CGFloat settings_control_width = 200.0;
 static const CGFloat settings_control_height = 26.0;
+static const CGFloat settings_width = 480.0;
+static const CGFloat settings_tab_width = 448.0;
 static const CGFloat settings_initial_height = 520.0;
 static const CGFloat settings_window_chrome_height = 32.0;
 static const CGFloat settings_minimum_height = 260.0;
@@ -328,16 +330,16 @@ void swanium_macos_menu_show_error(const char *message) {
 void swanium_macos_settings_show(void) {
   if (main_window == nil) return;
   if (settings_panel == nil) {
-    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 460, settings_initial_height)
+    settings_panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, settings_width, settings_initial_height)
       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
     settings_panel.title = @"Swanium Crystal Settings";
     // NSWindow minSize/maxSize use the complete frame, including title bar.
     // Keep the current initial frame as the maximum and permit half-height.
-    settings_panel.minSize = NSMakeSize(460, (settings_initial_height + settings_window_chrome_height) / 2.0);
-    settings_panel.maxSize = NSMakeSize(460, settings_initial_height + settings_window_chrome_height);
-    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, settings_outer_inset, 428, 488)];
+    settings_panel.minSize = NSMakeSize(settings_width, (settings_initial_height + settings_window_chrome_height) / 2.0);
+    settings_panel.maxSize = NSMakeSize(settings_width, settings_initial_height + settings_window_chrome_height);
+    NSTabView *tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(settings_outer_inset, settings_outer_inset, settings_tab_width, 488)];
     tabs.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    NSView *keyboard = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 428, settings_document_height)];
+    NSView *keyboard = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, settings_tab_width, settings_document_height)];
     NSStackView *keyboard_stack = settings_stack();
     NSArray<NSString *> *labels = @[@"X Pad Up", @"X Pad Right", @"X Pad Down", @"X Pad Left", @"Y Pad Up", @"Y Pad Right", @"Y Pad Down", @"Y Pad Left", @"A Button", @"B Button", @"Start"];
     NSStackView *last_keyboard_row = nil;
@@ -359,7 +361,7 @@ void swanium_macos_settings_show(void) {
     keyboard_tab.view = settings_scroll_content(keyboard);
     [tabs addTabViewItem:keyboard_tab];
 
-    NSView *controller = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 428, settings_document_height)];
+    NSView *controller = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, settings_tab_width, settings_document_height)];
     NSStackView *controller_stack = settings_stack();
     NSArray<NSString *> *directions = @[@"D-pad", @"Left stick", @"Right stick"];
     NSStackView *last_direction_row = nil;

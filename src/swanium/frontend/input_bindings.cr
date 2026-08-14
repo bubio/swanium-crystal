@@ -121,7 +121,10 @@ module Swanium
       end
 
       def self.option_name(scancode : Int32) : String
-        OPTIONS.find { |option| option[1] == scancode }.try(&.[0]) || "Unknown"
+        return ('A'.ord + scancode - 4).chr.to_s if scancode.in?(4..29)
+        return (scancode - 29).to_s if scancode.in?(30..38)
+        return "0" if scancode == 39
+        OPTIONS.find { |option| option[1] == scancode }.try(&.[0]) || "Scancode #{scancode}"
       end
 
       def self.controller_button_name(button : Int32) : String
