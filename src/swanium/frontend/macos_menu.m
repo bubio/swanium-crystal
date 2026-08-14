@@ -27,6 +27,15 @@ static const CGFloat settings_window_chrome_height = 32.0;
 static const CGFloat settings_minimum_height = 260.0;
 static const CGFloat settings_document_height = 480.0;
 
+// Slint's Cupertino theme in Swanium renders its dark-mode accent as this
+// blue. Keep the AppKit controls in the Crystal frontend visually consistent.
+static NSColor *swanium_tint_color(void) {
+  return [NSColor colorWithSRGBRed:(89.0 / 255.0)
+                             green:(189.0 / 255.0)
+                              blue:(255.0 / 255.0)
+                             alpha:1.0];
+}
+
 static int sdl_scancode_for_macos_keycode(unsigned short keycode) {
   switch (keycode) {
     case 0: return 4; case 1: return 22; case 2: return 7; case 3: return 9;
@@ -105,6 +114,7 @@ static NSTextField *settings_label(NSString *text) {
 static NSButton *settings_capture_button(NSInteger tag) {
   NSButton *button = [NSButton buttonWithTitle:@"Press a key…" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
   button.tag = tag;
+  button.contentTintColor = swanium_tint_color();
   button.translatesAutoresizingMaskIntoConstraints = NO;
   [[button widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
   [[button heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
@@ -363,6 +373,7 @@ void swanium_macos_settings_show(void) {
     }
     NSButton *keyboard_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
     keyboard_defaults.tag = 420;
+    keyboard_defaults.contentTintColor = swanium_tint_color();
     keyboard_defaults.translatesAutoresizingMaskIntoConstraints = NO;
     [[keyboard_defaults widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
     [[keyboard_defaults heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
@@ -387,6 +398,7 @@ void swanium_macos_settings_show(void) {
       direction_popups[index].target = [SwaniumMenuTarget sharedTarget];
       direction_popups[index].action = @selector(activate:);
       direction_popups[index].tag = 600 + index;
+      direction_popups[index].contentTintColor = swanium_tint_color();
       last_direction_row = settings_row(directions[index], direction_popups[index]);
       [controller_stack addArrangedSubview:last_direction_row];
     }
@@ -400,6 +412,7 @@ void swanium_macos_settings_show(void) {
     }
     NSButton *controller_defaults = [NSButton buttonWithTitle:@"Restore Defaults" target:[SwaniumMenuTarget sharedTarget] action:@selector(activate:)];
     controller_defaults.tag = 520;
+    controller_defaults.contentTintColor = swanium_tint_color();
     controller_defaults.translatesAutoresizingMaskIntoConstraints = NO;
     [[controller_defaults widthAnchor] constraintEqualToConstant:settings_control_width].active = YES;
     [[controller_defaults heightAnchor] constraintEqualToConstant:settings_control_height].active = YES;
