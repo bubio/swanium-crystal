@@ -1,6 +1,6 @@
 require "./apu"
 require "./memory_bus"
-require "./wonder_swan_hardware"
+require "./hardware"
 
 module Swanium
   module Core

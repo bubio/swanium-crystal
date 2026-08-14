@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_noise_generator"
+require "../../src/swanium/core/noise_generator"
 
 describe Swanium::Core::WonderSwanNoiseGenerator do
   it "clocks the cartridge-visible LFSR on Color hardware" do

@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_dma_controller"
+require "../../src/swanium/core/dma_controller"
 
 describe Swanium::Core::WonderSwanDmaController do
   it "performs GDMA through the MemoryBus interface" do

@@ -1,4 +1,4 @@
-require "../core/wonder_swan_bus"
+require "../core/bus"
 
 module Swanium
   module Frontend

@@ -2,9 +2,9 @@ require "./memory_bus"
 require "./apu"
 require "./cartridge"
 require "./rtc"
-require "./wonder_swan_dma_controller"
-require "./wonder_swan_hardware"
-require "./wonder_swan_interrupt_controller"
+require "./dma_controller"
+require "./hardware"
+require "./interrupt_controller"
 
 module Swanium
   module Core

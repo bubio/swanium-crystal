@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_wave_generator"
+require "../../src/swanium/core/wave_generator"
 
 describe Swanium::Core::WonderSwanWaveGenerator do
   it "advances enabled waveform channels from wave RAM" do

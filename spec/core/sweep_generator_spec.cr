@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_sweep_generator"
+require "../../src/swanium/core/sweep_generator"
 
 describe Swanium::Core::WonderSwanSweepGenerator do
   it "wraps an overflowing fast channel-three sweep" do

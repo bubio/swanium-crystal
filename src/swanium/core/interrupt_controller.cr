@@ -1,4 +1,4 @@
-require "./wonder_swan_hardware"
+require "./hardware"
 
 module Swanium
   module Core

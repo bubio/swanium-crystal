@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_palette"
+require "../../src/swanium/core/palette"
 
 describe Swanium::Core::WonderSwanPalette do
   it "resolves RGB444 palette RAM entries and Color transparency" do

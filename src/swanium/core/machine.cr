@@ -1,7 +1,7 @@
 require "./cpu"
 require "./apu"
 require "./ppu"
-require "./wonder_swan_bus"
+require "./bus"
 
 module Swanium
   module Core

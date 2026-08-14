@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_voice_channel"
+require "../../src/swanium/core/voice_channel"
 
 describe Swanium::Core::WonderSwanVoiceChannel do
   it "interpolates streamed PCM and applies stereo routing" do

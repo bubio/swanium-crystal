@@ -1,9 +1,9 @@
-require "./wonder_swan_wave_generator"
+require "./wave_generator"
 require "./pcm_sample_buffer"
-require "./wonder_swan_noise_generator"
-require "./wonder_swan_voice_channel"
-require "./wonder_swan_sweep_generator"
-require "./wonder_swan_hypervoice"
+require "./noise_generator"
+require "./voice_channel"
+require "./sweep_generator"
+require "./hypervoice"
 
 module Swanium
   module Core

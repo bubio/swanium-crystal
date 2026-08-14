@@ -1,5 +1,5 @@
 require "../spec_helper"
-require "../../src/swanium/core/wonder_swan_hypervoice"
+require "../../src/swanium/core/hypervoice"
 
 describe Swanium::Core::WonderSwanHyperVoice do
   it "expands latched samples and applies stereo routing" do

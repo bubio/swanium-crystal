@@ -1,5 +1,5 @@
-require "./wonder_swan_sprite_latch"
-require "./wonder_swan_palette"
+require "./sprite_latch"
+require "./palette"
 
 module Swanium
   module Core
