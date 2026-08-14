@@ -195,7 +195,9 @@ void swanium_macos_menu_build(void) {
   quit.keyEquivalent = @"q";
   [application addItem:quit];
   NSMenu *emulation = submenu(@"Emulation");
-  [emulation addItem:item(@"Open ROM…", 1)];
+  NSMenuItem *open_rom = item(@"Open ROM…", 1);
+  open_rom.keyEquivalent = @"o";
+  [emulation addItem:open_rom];
   recent_menu = submenu(@"Open Recent");
   NSMenuItem *recent_root = [[NSMenuItem alloc] initWithTitle:@"Open Recent" action:nil keyEquivalent:@""];
   recent_root.submenu = recent_menu;
@@ -206,8 +208,10 @@ void swanium_macos_menu_build(void) {
   for (NSInteger slot = 0; slot < 10; slot++) {
     NSString *title = [NSString stringWithFormat:@"Slot %ld", (long)slot];
     save_state_items[slot] = item(title, 100 + slot);
+    if (slot == 0) save_state_items[slot].keyEquivalent = @"s";
     [save_state addItem:save_state_items[slot]];
     load_state_items[slot] = item(title, 200 + slot);
+    if (slot == 0) load_state_items[slot].keyEquivalent = @"l";
     [load_state addItem:load_state_items[slot]];
   }
   NSMenuItem *save_root = [[NSMenuItem alloc] initWithTitle:@"Save State" action:nil keyEquivalent:@""];
@@ -218,8 +222,11 @@ void swanium_macos_menu_build(void) {
   [emulation addItem:load_state_root];
   [emulation addItem:[NSMenuItem separatorItem]];
   pause_item = item(@"Pause", 4);
+  pause_item.keyEquivalent = @"p";
   [emulation addItem:pause_item];
-  [emulation addItem:item(@"Reset", 5)];
+  NSMenuItem *reset = item(@"Reset", 5);
+  reset.keyEquivalent = @"r";
+  [emulation addItem:reset];
   add_top_level(bar, @"Emulation", emulation);
 
   NSMenu *view = submenu(@"View");
@@ -228,6 +235,10 @@ void swanium_macos_menu_build(void) {
   scale_items[1] = item(@"2x", 12);
   scale_items[2] = item(@"3x", 13);
   scale_items[3] = item(@"4x", 14);
+  scale_items[0].keyEquivalent = @"1";
+  scale_items[1].keyEquivalent = @"2";
+  scale_items[2].keyEquivalent = @"3";
+  scale_items[3].keyEquivalent = @"4";
   [scale addItem:scale_items[0]];
   [scale addItem:scale_items[1]];
   [scale addItem:scale_items[2]];
@@ -236,6 +247,8 @@ void swanium_macos_menu_build(void) {
   scale_root.submenu = scale;
   [view addItem:scale_root];
   fullscreen_item = item(@"Fullscreen", 20);
+  fullscreen_item.keyEquivalent = [NSString stringWithFormat:@"%C", (unichar)NSF11FunctionKey];
+  fullscreen_item.keyEquivalentModifierMask = 0;
   [view addItem:fullscreen_item];
   [view addItem:[NSMenuItem separatorItem]];
   NSMenu *renderer = submenu(@"Renderer");
