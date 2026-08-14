@@ -47,6 +47,23 @@ module Swanium
         File.write(destination, values.keys.sort.map { |key| "#{key}=#{values[key]}" }.join('\n') + '\n')
       end
 
+      # Window placement belongs with the other user preferences, rather than
+      # with a particular ROM or save-state slot. Invalid or incomplete values
+      # are ignored so an edited or older settings file falls back to centering.
+      def window_position : Tuple(Int32, Int32)?
+        values = settings
+        x = values["window.x"]?.try(&.to_i?)
+        y = values["window.y"]?.try(&.to_i?)
+        x && y ? {x, y} : nil
+      end
+
+      def save_window_position(x : Int32, y : Int32) : Nil
+        values = settings
+        values["window.x"] = x.to_s
+        values["window.y"] = y.to_s
+        save_settings(values)
+      end
+
       def recent_roms : Array(String)
         source = recent_roms_path
         return [] of String unless File.exists?(source)

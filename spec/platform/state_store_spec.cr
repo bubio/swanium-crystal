@@ -99,4 +99,22 @@ describe Swanium::Platform::StateStore do
       Dir.delete(root) if Dir.exists?(root)
     end
   end
+
+  it "persists complete window positions and ignores incomplete values" do
+    root = Path["/tmp/swanium-window-position-spec"]
+    begin
+      store = Swanium::Platform::StateStore.new(root)
+
+      store.window_position.should be_nil
+      store.save_window_position(-120, 48)
+      store.window_position.should eq({-120, 48})
+
+      store.save_settings({"window.x" => "42"})
+      store.window_position.should be_nil
+    ensure
+      File.delete(root / "swanium-crystal" / "settings.txt") if File.exists?(root / "swanium-crystal" / "settings.txt")
+      Dir.delete(root / "swanium-crystal") if Dir.exists?(root / "swanium-crystal")
+      Dir.delete(root) if Dir.exists?(root)
+    end
+  end
 end

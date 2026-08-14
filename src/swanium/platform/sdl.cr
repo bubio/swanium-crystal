@@ -116,6 +116,7 @@ module Swanium
         fun get_error = SDL_GetError : LibC::Char*
         fun create_window = SDL_CreateWindow(title : LibC::Char*, x : Int32, y : Int32, width : Int32, height : Int32, flags : UInt32) : Void*
         fun destroy_window = SDL_DestroyWindow(window : Void*) : Nil
+        fun get_window_position = SDL_GetWindowPosition(window : Void*, x : Int32*, y : Int32*) : Nil
         fun set_window_size = SDL_SetWindowSize(window : Void*, width : Int32, height : Int32) : Nil
         fun set_window_fullscreen = SDL_SetWindowFullscreen(window : Void*, flags : UInt32) : Int32
         fun create_renderer = SDL_CreateRenderer(window : Void*, index : Int32, flags : UInt32) : Void*
@@ -228,9 +229,10 @@ module Swanium
         audio_device = 0_u32
         scale = controls.initial_scale
         begin
+          window_x, window_y = restored_window_position
           window = LibSDL.create_window(
             "Swanium Crystal - video and input test",
-            WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
+            window_x, window_y,
             Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22,
             WINDOW_SHOWN
           )
@@ -373,6 +375,7 @@ module Swanium
             next_frame = wait_for_next_frame(next_frame, frame_ticks, frequency)
           end
         ensure
+          save_window_position(window) unless window.null? || fullscreen
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
@@ -414,8 +417,9 @@ module Swanium
         scale = controls.initial_scale
         begin
           StateStore.default.load_cartridge_save(bus, title)
+          window_x, window_y = restored_window_position
           window = LibSDL.create_window(
-            "Swanium Crystal - #{title}", WINDOWPOS_CENTERED, WINDOWPOS_CENTERED,
+            "Swanium Crystal - #{title}", window_x, window_y,
             display_width * scale, display_height * scale + 22, WINDOW_SHOWN
           )
           raise SdlError.new(error_message) if window.null?
@@ -570,6 +574,7 @@ module Swanium
           end
         ensure
           StateStore.default.save_cartridge_save(bus, title)
+          save_window_position(window) unless window.null? || fullscreen
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
@@ -611,6 +616,17 @@ module Swanium
       private def self.error_message : String
         error = LibSDL.get_error
         error.null? ? "SDL2 initialization failed" : String.new(error)
+      end
+
+      private def self.restored_window_position : Tuple(Int32, Int32)
+        StateStore.default.window_position || {WINDOWPOS_CENTERED, WINDOWPOS_CENTERED}
+      end
+
+      private def self.save_window_position(window : Void*) : Nil
+        x = 0
+        y = 0
+        LibSDL.get_window_position(window, pointerof(x), pointerof(y))
+        StateStore.default.save_window_position(x, y)
       end
 
       private def self.check(result : Int32) : Nil
