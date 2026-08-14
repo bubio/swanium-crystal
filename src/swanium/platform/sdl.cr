@@ -27,8 +27,10 @@ module Swanium
       AUDIO_ALLOW_SAMPLES_CHANGE =           0x08
       EVENT_QUIT                 =      0x100_u32
       EVENT_KEYDOWN              =      0x300_u32
-      EVENT_CONTROLLER_ADDED     =      0x650_u32
-      EVENT_CONTROLLER_REMOVED   =      0x651_u32
+      EVENT_JOYSTICK_ADDED       =      0x605_u32
+      EVENT_JOYSTICK_REMOVED     =      0x606_u32
+      EVENT_CONTROLLER_ADDED     =      0x653_u32
+      EVENT_CONTROLLER_REMOVED   =      0x654_u32
       PAD_DEAD_ZONE              =     16_000_i16
       PAD_LEFT_X                 =              0
       PAD_LEFT_Y                 =              1
@@ -41,6 +43,10 @@ module Swanium
       PAD_DPAD_DOWN              =             12
       PAD_DPAD_LEFT              =             13
       PAD_DPAD_RIGHT             =             14
+      HAT_UP                     =        0x01_u8
+      HAT_RIGHT                  =        0x02_u8
+      HAT_DOWN                   =        0x04_u8
+      HAT_LEFT                   =        0x08_u8
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -131,6 +137,12 @@ module Swanium
         fun game_controller_get_attached = SDL_GameControllerGetAttached(controller : Void*) : Int32
         fun game_controller_get_button = SDL_GameControllerGetButton(controller : Void*, button : Int32) : UInt8
         fun game_controller_get_axis = SDL_GameControllerGetAxis(controller : Void*, axis : Int32) : Int16
+        fun joystick_open = SDL_JoystickOpen(index : Int32) : Void*
+        fun joystick_close = SDL_JoystickClose(joystick : Void*) : Nil
+        fun joystick_get_attached = SDL_JoystickGetAttached(joystick : Void*) : Int32
+        fun joystick_get_button = SDL_JoystickGetButton(joystick : Void*, button : Int32) : UInt8
+        fun joystick_get_axis = SDL_JoystickGetAxis(joystick : Void*, axis : Int32) : Int16
+        fun joystick_get_hat = SDL_JoystickGetHat(joystick : Void*, hat : Int32) : UInt8
         fun get_performance_counter = SDL_GetPerformanceCounter : UInt64
         fun get_performance_frequency = SDL_GetPerformanceFrequency : UInt64
         fun delay = SDL_Delay(milliseconds : UInt32) : Nil
@@ -140,6 +152,63 @@ module Swanium
         fun queue_audio = SDL_QueueAudio(device : UInt32, data : Void*, length : UInt32) : Int32
         fun get_queued_audio_size = SDL_GetQueuedAudioSize(device : UInt32) : UInt32
         fun clear_queued_audio = SDL_ClearQueuedAudio(device : UInt32) : Nil
+      end
+
+      # Prefer SDL's standardized GameController mapping, but do not discard a
+      # connected HID controller merely because SDL has no mapping for it.
+      # The generic fallback follows the common SDL joystick convention:
+      # buttons use their raw indices, hats provide the D-pad, and axes 0–3
+      # provide the two sticks.
+      private class Controller
+        def self.open_first : Controller?
+          index = 0
+          while index < LibSDL.num_joysticks
+            if LibSDL.is_game_controller(index) != 0
+              gamepad = LibSDL.game_controller_open(index)
+              return new(gamepad, Pointer(Void).null) unless gamepad.null?
+            end
+            index += 1
+          end
+
+          # If a recognized controller is present, it always wins over the
+          # raw fallback so its standardized button names remain meaningful.
+          index = 0
+          while index < LibSDL.num_joysticks
+            if LibSDL.is_game_controller(index) == 0
+              joystick = LibSDL.joystick_open(index)
+              return new(Pointer(Void).null, joystick) unless joystick.null?
+            end
+            index += 1
+          end
+          nil
+        end
+
+        def initialize(@gamepad : Void*, @joystick : Void*)
+        end
+
+        def attached? : Bool
+          @gamepad.null? ? LibSDL.joystick_get_attached(@joystick) != 0 : LibSDL.game_controller_get_attached(@gamepad) != 0
+        end
+
+        def button(index : Int32) : UInt8
+          @gamepad.null? ? LibSDL.joystick_get_button(@joystick, index) : LibSDL.game_controller_get_button(@gamepad, index)
+        end
+
+        def axis(index : Int32) : Int16
+          @gamepad.null? ? LibSDL.joystick_get_axis(@joystick, index) : LibSDL.game_controller_get_axis(@gamepad, index)
+        end
+
+        def generic? : Bool
+          @gamepad.null?
+        end
+
+        def hat : UInt8
+          generic? ? LibSDL.joystick_get_hat(@joystick, 0) : 0_u8
+        end
+
+        def close : Nil
+          @gamepad.null? ? LibSDL.joystick_close(@joystick) : LibSDL.game_controller_close(@gamepad)
+        end
       end
 
       # Interactive, copyright-free display/input verification program. It
@@ -155,7 +224,7 @@ module Swanium
         window = Pointer(Void).null
         renderer = Pointer(Void).null
         texture = Pointer(Void).null
-        controller = Pointer(Void).null
+        controller = nil.as(Controller?)
         audio_device = 0_u32
         scale = controls.initial_scale
         begin
@@ -174,7 +243,7 @@ module Swanium
             Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
-          controller = first_controller
+          controller = Controller.open_first
           controls.update_state_slots("video-demo")
 
           desired = LibSDL::AudioSpec.new
@@ -210,10 +279,12 @@ module Swanium
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
-              controller = first_controller if event.type == EVENT_CONTROLLER_ADDED && controller.null?
-              if event.type == EVENT_CONTROLLER_REMOVED && !controller.null? && LibSDL.game_controller_get_attached(controller) == 0
-                LibSDL.game_controller_close(controller)
-                controller = Pointer(Void).null
+              if controller.nil? && (event.type == EVENT_CONTROLLER_ADDED || event.type == EVENT_JOYSTICK_ADDED)
+                controller = Controller.open_first
+              end
+              if (event.type == EVENT_CONTROLLER_REMOVED || event.type == EVENT_JOYSTICK_REMOVED) && controller.try(&.attached?) == false
+                controller.not_nil!.close
+                controller = nil
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
@@ -304,7 +375,7 @@ module Swanium
           end
         ensure
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
-          LibSDL.game_controller_close(controller) unless controller.null?
+          controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
           LibSDL.destroy_renderer(renderer) unless renderer.null?
           controls.detach_status
@@ -329,7 +400,7 @@ module Swanium
         window = Pointer(Void).null
         renderer = Pointer(Void).null
         texture = Pointer(Void).null
-        controller = Pointer(Void).null
+        controller = nil.as(Controller?)
         audio_device = 0_u32
         opened_rom_path = nil.as(String?)
         bus = Core::WonderSwanBus.from_cartridge(cartridge)
@@ -357,7 +428,7 @@ module Swanium
             display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
-          controller = first_controller
+          controller = Controller.open_first
           controls.update_state_slots(state_id)
 
           desired = LibSDL::AudioSpec.new
@@ -394,10 +465,12 @@ module Swanium
           while running && !controls.quit_requested
             while LibSDL.poll_event(pointerof(event)) != 0
               running = false if event.type == EVENT_QUIT
-              controller = first_controller if event.type == EVENT_CONTROLLER_ADDED && controller.null?
-              if event.type == EVENT_CONTROLLER_REMOVED && !controller.null? && LibSDL.game_controller_get_attached(controller) == 0
-                LibSDL.game_controller_close(controller)
-                controller = Pointer(Void).null
+              if controller.nil? && (event.type == EVENT_CONTROLLER_ADDED || event.type == EVENT_JOYSTICK_ADDED)
+                controller = Controller.open_first
+              end
+              if (event.type == EVENT_CONTROLLER_REMOVED || event.type == EVENT_JOYSTICK_REMOVED) && controller.try(&.attached?) == false
+                controller.not_nil!.close
+                controller = nil
               end
               if event.type == EVENT_KEYDOWN
                 keyboard = pointerof(event).as(LibSDL::KeyboardEvent*).value
@@ -506,7 +579,7 @@ module Swanium
         ensure
           StateStore.default.save_cartridge_save(bus, title)
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
-          LibSDL.game_controller_close(controller) unless controller.null?
+          controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
           LibSDL.destroy_renderer(renderer) unless renderer.null?
           controls.detach_status
@@ -569,19 +642,7 @@ module Swanium
         check(LibSDL.render_copy(renderer, texture, Pointer(Void).null, pointerof(destination).as(Void*)))
       end
 
-      private def self.first_controller : Void*
-        index = 0
-        while index < LibSDL.num_joysticks
-          if LibSDL.is_game_controller(index) != 0
-            controller = LibSDL.game_controller_open(index)
-            return controller unless controller.null?
-          end
-          index += 1
-        end
-        Pointer(Void).null
-      end
-
-      private def self.input_state(controller : Void*) : Tuple(UInt16, Bool)
+      private def self.input_state(controller : Controller?) : Tuple(UInt16, Bool)
         state = LibSDL.get_keyboard_state(Pointer(Int32).null)
         keys = 0_u16
         # Match Swanium's established horizontal default bindings exactly.
@@ -597,31 +658,45 @@ module Swanium
         keys |= Core::WonderSwanKey::A if state[bindings.scancode(:a)] != 0
         keys |= Core::WonderSwanKey::B if state[bindings.scancode(:b)] != 0
         keys |= Core::WonderSwanKey::Start if state[bindings.scancode(:start)] != 0
-        unless controller.null?
-          keys |= Core::WonderSwanKey::A if LibSDL.game_controller_get_button(controller, bindings.controller_button(:a)) != 0
-          keys |= Core::WonderSwanKey::B if LibSDL.game_controller_get_button(controller, bindings.controller_button(:b)) != 0
-          keys |= Core::WonderSwanKey::Start if LibSDL.game_controller_get_button(controller, bindings.controller_button(:start)) != 0
+        if controller
+          keys |= Core::WonderSwanKey::A if controller.button(bindings.controller_button(:a)) != 0
+          keys |= Core::WonderSwanKey::B if controller.button(bindings.controller_button(:b)) != 0
+          keys |= Core::WonderSwanKey::Start if controller.button(bindings.controller_button(:start)) != 0
           keys = apply_dpad(keys, controller, bindings.controller_destination("dpad", 1))
-          keys = apply_stick_destination(keys, LibSDL.game_controller_get_axis(controller, PAD_LEFT_X),
-            LibSDL.game_controller_get_axis(controller, PAD_LEFT_Y), bindings.controller_destination("left_stick", 1))
-          keys = apply_stick_destination(keys, LibSDL.game_controller_get_axis(controller, PAD_RIGHT_X),
-            LibSDL.game_controller_get_axis(controller, PAD_RIGHT_Y), bindings.controller_destination("right_stick", 2))
+          keys = apply_stick_destination(keys, controller.axis(PAD_LEFT_X),
+            controller.axis(PAD_LEFT_Y), bindings.controller_destination("left_stick", 1))
+          keys = apply_stick_destination(keys, controller.axis(PAD_RIGHT_X),
+            controller.axis(PAD_RIGHT_Y), bindings.controller_destination("right_stick", 2))
         end
         {keys, state[SC_ESCAPE] != 0}
       end
 
-      private def self.apply_dpad(keys : UInt16, controller : Void*, destination : Int32) : UInt16
+      private def self.apply_dpad(keys : UInt16, controller : Controller, destination : Int32) : UInt16
         case destination
         when 1
-          keys |= Core::WonderSwanKey::X1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
-          keys |= Core::WonderSwanKey::X3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
-          keys |= Core::WonderSwanKey::X4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
-          keys |= Core::WonderSwanKey::X2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+          keys = apply_dpad_destination(keys, controller, HAT_UP, HAT_RIGHT, HAT_DOWN, HAT_LEFT,
+            Core::WonderSwanKey::X1, Core::WonderSwanKey::X2, Core::WonderSwanKey::X3, Core::WonderSwanKey::X4)
         when 2
-          keys |= Core::WonderSwanKey::Y1 if LibSDL.game_controller_get_button(controller, PAD_DPAD_UP) != 0
-          keys |= Core::WonderSwanKey::Y3 if LibSDL.game_controller_get_button(controller, PAD_DPAD_DOWN) != 0
-          keys |= Core::WonderSwanKey::Y4 if LibSDL.game_controller_get_button(controller, PAD_DPAD_LEFT) != 0
-          keys |= Core::WonderSwanKey::Y2 if LibSDL.game_controller_get_button(controller, PAD_DPAD_RIGHT) != 0
+          keys = apply_dpad_destination(keys, controller, HAT_UP, HAT_RIGHT, HAT_DOWN, HAT_LEFT,
+            Core::WonderSwanKey::Y1, Core::WonderSwanKey::Y2, Core::WonderSwanKey::Y3, Core::WonderSwanKey::Y4)
+        end
+        keys
+      end
+
+      private def self.apply_dpad_destination(keys : UInt16, controller : Controller,
+                                              hat_up : UInt8, hat_right : UInt8, hat_down : UInt8, hat_left : UInt8,
+                                              up : UInt16, right : UInt16, down : UInt16, left : UInt16) : UInt16
+        if controller.generic?
+          hat = controller.hat
+          keys |= up if (hat & hat_up) != 0
+          keys |= right if (hat & hat_right) != 0
+          keys |= down if (hat & hat_down) != 0
+          keys |= left if (hat & hat_left) != 0
+        else
+          keys |= up if controller.button(PAD_DPAD_UP) != 0
+          keys |= right if controller.button(PAD_DPAD_RIGHT) != 0
+          keys |= down if controller.button(PAD_DPAD_DOWN) != 0
+          keys |= left if controller.button(PAD_DPAD_LEFT) != 0
         end
         keys
       end
@@ -644,10 +719,10 @@ module Swanium
         result
       end
 
-      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Void*) : Nil
-        return if controller.null?
+      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Controller?) : Nil
+        return unless controller
         21.times do |button|
-          if LibSDL.game_controller_get_button(controller, button) != 0
+          if controller.button(button) != 0
             break if controls.capture_controller_button(button)
           end
         end
