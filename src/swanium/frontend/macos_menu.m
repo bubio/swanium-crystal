@@ -474,6 +474,10 @@ void swanium_macos_status_attach_sdl_window(void *sdl_window) {
   SDL_SysWMinfo info;
   SDL_VERSION(&info.version);
   if (SDL_GetWindowWMInfo((SDL_Window *)sdl_window, &info) == SDL_FALSE) return;
+  // The RGBA texture contains RGB444 values expanded into sRGB bytes. Declare
+  // that source space explicitly so AppKit/ColorSync follows the same path as
+  // the reference Swanium frontend instead of inheriting an SDL default.
+  info.info.cocoa.window.colorSpace = NSColorSpace.sRGBColorSpace;
   swanium_macos_status_attach((__bridge void *)info.info.cocoa.window);
 }
 
