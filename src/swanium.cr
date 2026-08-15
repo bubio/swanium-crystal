@@ -10,7 +10,7 @@ require "./swanium/platform/sdl"
 require "./swanium/platform/state_store"
 
 module Swanium
-  VERSION = "0.1.0"
+  VERSION = "1.0.0"
 
   def self.run(arguments : Array(String)) : Nil
     sdl_smoke = false
@@ -77,7 +77,11 @@ module Swanium
     elsif sdl_smoke
       Platform::Sdl.smoke_test
     else
-      puts "Swanium Crystal #{VERSION}: core scaffold ready"
+      # A Finder-launched app has no command-line ROM path. Keep the main
+      # window open and let its Open ROM menu action select a cartridge.
+      if path = Platform::Sdl.launcher
+        run(["--rom", path])
+      end
     end
   end
 end

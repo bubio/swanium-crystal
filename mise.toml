@@ -6,6 +6,7 @@ crystal = "1.18.2"
 [vars]
 llvm_version = "15.0.7"
 sdl2_version = "2.32.70"
+sdl3_version = "3.4.12"
 
 [tasks.format]
 description = "Check Crystal source and spec formatting"
@@ -28,12 +29,12 @@ description = "Alias for the headless test suite"
 depends = ["spec"]
 
 [tasks.build]
-description = "Build the optimized macOS application"
-run = "mkdir -p bin && sh tools/build_macos_menu.sh bin/macos_menu.o && crystal build --release --no-debug --link-flags \"$(pwd)/bin/macos_menu.o -framework Cocoa -Wl,-headerpad_max_install_names\" src/swanium.cr -o bin/swanium-crystal && sh tools/relink_macos_sdl.sh bin/swanium-crystal"
+description = "Build the optimized macOS app bundle"
+run = "rm -rf 'bin/Swanium Crystal.app' && mkdir -p 'bin/Swanium Crystal.app/Contents/MacOS' && cp tools/macos/Info.plist 'bin/Swanium Crystal.app/Contents/Info.plist' && sh tools/build_macos_menu.sh bin/macos_menu.o && crystal build --release --no-debug --link-flags \"$(pwd)/bin/macos_menu.o -framework Cocoa -framework UniformTypeIdentifiers -Wl,-headerpad_max_install_names\" src/swanium.cr -o 'bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal' && sh tools/bundle_macos_dependencies.sh 'bin/Swanium Crystal.app' && codesign --force --deep --sign - 'bin/Swanium Crystal.app'"
 
 [tasks.build-debug]
-description = "Build an unoptimized binary for debugger work"
-run = "mkdir -p bin && sh tools/build_macos_menu.sh bin/macos_menu.o && crystal build --link-flags \"$(pwd)/bin/macos_menu.o -framework Cocoa -Wl,-headerpad_max_install_names\" src/swanium.cr -o bin/swanium-crystal-debug && sh tools/relink_macos_sdl.sh bin/swanium-crystal-debug"
+description = "Build an unoptimized macOS app bundle for debugger work"
+run = "rm -rf 'bin/Swanium Crystal Debug.app' && mkdir -p 'bin/Swanium Crystal Debug.app/Contents/MacOS' && cp tools/macos/Info.plist 'bin/Swanium Crystal Debug.app/Contents/Info.plist' && sh tools/build_macos_menu.sh bin/macos_menu-debug.o && crystal build --link-flags \"$(pwd)/bin/macos_menu-debug.o -framework Cocoa -framework UniformTypeIdentifiers -Wl,-headerpad_max_install_names\" src/swanium.cr -o 'bin/Swanium Crystal Debug.app/Contents/MacOS/swanium-crystal' && sh tools/bundle_macos_dependencies.sh 'bin/Swanium Crystal Debug.app' && codesign --force --deep --sign - 'bin/Swanium Crystal Debug.app'"
 
 [tasks.ci]
 description = "Run the repository CI suite with self-contained fixtures only"
@@ -45,16 +46,18 @@ depends = ["ci"]
 
 [tasks.sdl-smoke]
 description = "Create an SDL2 window briefly (requires a desktop session)"
-run = "crystal run src/swanium.cr -- --sdl-smoke"
+depends = ["build"]
+run = "open -W 'bin/Swanium Crystal.app' --args --sdl-smoke"
 
 [tasks.sdl-smoke-ci]
 description = "Verify SDL2 initialization through its headless dummy video driver"
-run = "SDL_VIDEODRIVER=dummy crystal run src/swanium.cr -- --sdl-smoke"
+depends = ["build"]
+run = "SDL_VIDEODRIVER=dummy 'bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal' --sdl-smoke"
 
 [tasks.headless-fixture]
 description = "Run the built CLI against a generated, copyright-free cartridge fixture"
 depends = ["build"]
-run = "crystal run tools/run_headless_fixture.cr -- bin/swanium-crystal"
+run = "crystal run tools/run_headless_fixture.cr -- 'bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal'"
 
 [tasks.video-demo]
 description = "Run the 60 fps video, input, audio, save-state, and debugger test"

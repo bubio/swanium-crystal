@@ -613,6 +613,71 @@ module Swanium
         end
       end
 
+      # The initial state matches the main Swanium frontend: a normal emulator
+      # window remains open with no ROM loaded. Open ROM… returns a selected
+      # path to the application layer, which then starts the game.
+      def self.launcher : String?
+        controls = Frontend::NativeControls.start("Swanium Crystal")
+        if LibSDL.init(INIT_VIDEO) != 0
+          controls.close
+          raise SdlError.new(error_message)
+        end
+
+        window = Pointer(Void).null
+        renderer = Pointer(Void).null
+        opened_rom_path = nil.as(String?)
+        scale = controls.initial_scale
+        fullscreen = false
+        begin
+          window_x, window_y = restored_window_position
+          window = LibSDL.create_window(
+            "Swanium Crystal", window_x, window_y,
+            Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22,
+            WINDOW_SHOWN
+          )
+          raise SdlError.new(error_message) if window.null?
+          controls.install_menus
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
+          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+          raise SdlError.new(error_message) if renderer.null?
+          controls.attach_status(window)
+          controls.update_status("No ROM loaded", 0.0, false)
+
+          event = uninitialized LibSDL::Event
+          running = true
+          while running && !controls.quit_requested
+            while LibSDL.poll_event(pointerof(event)) != 0
+              running = false if event.type == EVENT_QUIT
+            end
+            controls.pump
+            if path = controls.take_open_rom_path
+              opened_rom_path = path
+              running = false
+            end
+            if requested_scale = controls.take_scale_request
+              scale = requested_scale
+              LibSDL.set_window_size(window, Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22)
+              controls.save_scale(scale)
+            end
+            if controls.take_fullscreen_request?
+              fullscreen = !fullscreen
+              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+            end
+            controls.update_menu_state(false, scale, fullscreen, 0)
+            check(LibSDL.render_clear(renderer))
+            LibSDL.render_present(renderer)
+            LibSDL.delay(16_u32)
+          end
+          opened_rom_path
+        ensure
+          save_window_position(window) unless window.null? || fullscreen
+          controls.detach_status
+          LibSDL.destroy_renderer(renderer) unless renderer.null?
+          LibSDL.quit
+          controls.close
+        end
+      end
+
       private def self.error_message : String
         error = LibSDL.get_error
         error.null? ? "SDL2 initialization failed" : String.new(error)

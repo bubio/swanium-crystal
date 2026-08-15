@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <SDL.h>
 #import <SDL_syswm.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static int pending_action = 0;
 static NSTextField *status_label = nil;
@@ -326,8 +327,16 @@ int swanium_macos_menu_take_action(void) {
 }
 
 const char *swanium_macos_menu_open_rom(void) {
+  // The initial ROM picker runs before SDL creates its first window. Make the
+  // process a foreground Cocoa app so a Finder launch can present the panel.
+  [NSApplication sharedApplication];
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+  [NSApp activateIgnoringOtherApps:YES];
   NSOpenPanel *panel = [NSOpenPanel openPanel];
-  panel.allowedFileTypes = @[@"ws", @"wsc"];
+  panel.allowedContentTypes = @[
+    [UTType typeWithFilenameExtension:@"ws"],
+    [UTType typeWithFilenameExtension:@"wsc"],
+  ];
   panel.allowsMultipleSelection = NO;
   panel.canChooseDirectories = NO;
   if ([panel runModal] != NSModalResponseOK) return NULL;

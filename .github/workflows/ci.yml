@@ -49,35 +49,49 @@ jobs:
       - name: Verify runner architecture
         run: |
           test "$(uname -m)" = "${{ matrix.arch }}"
-      - name: Build SDL development libraries for macOS 13.5
-        # Homebrew bottles built on macOS 26 carry a macOS 26 minimum version.
-        # Build both SDL3 and its SDL2 compatibility library from source instead.
-        run: brew install --build-from-source sdl3 sdl2
+      - name: Build pinned SDL releases for macOS 13.5
+        # Fetch the official GitHub release sources, verify their SHA-256, and
+        # build them for the deployment target instead of using Homebrew bottles.
+        run: |
+          prefix="$RUNNER_TEMP/swanium-sdl"
+          sh tools/build_macos_sdl.sh "$prefix"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          echo "PKG_CONFIG_PATH=$prefix/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "SWANIUM_SDL2_LIBRARY=$prefix/lib/libSDL2-2.0.0.dylib" >> "$GITHUB_ENV"
+          echo "SWANIUM_SDL3_LIBRARY=$prefix/lib/libSDL3.0.dylib" >> "$GITHUB_ENV"
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
         with:
           cache: true
-      - name: Test and build optimized binary
+      - name: Test and build optimized app bundle
         run: mise run ci
-      - name: Verify binary and SDL2 linkage
+      - name: Verify app bundle and SDL2 linkage
         run: |
-          file bin/swanium-crystal
-          otool -l bin/swanium-crystal | awk '
+          app='bin/Swanium Crystal.app'
+          executable="$app/Contents/MacOS/swanium-crystal"
+          test -f "$app/Contents/Info.plist"
+          test -f "$app/Contents/Frameworks/libSDL2-2.0.0.dylib"
+          test -f "$app/Contents/Frameworks/libSDL3.dylib"
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "1.0.0"
+          test "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" = "1"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          file "$executable"
+          otool -l "$executable" | awk '
             /LC_BUILD_VERSION/ { in_build_version = 1 }
             in_build_version && /minos 13\.5/ { found_target = 1 }
             END { exit !found_target }
           '
-          otool -L bin/swanium-crystal | grep -i 'libSDL2'
+          otool -L "$executable" | grep '@executable_path/../Frameworks/libSDL2'
           while IFS= read -r -d '' dylib; do
             otool -l "$dylib" | awk '
               /LC_BUILD_VERSION/ { in_build_version = 1 }
               in_build_version && /minos 13\.5/ { found_target = 1 }
               END { exit !found_target }
             '
-          done < <(find "$(brew --prefix sdl3)" "$(brew --prefix sdl2)" -name '*.dylib' -print0)
-          bin/swanium-crystal --version
-      - name: Upload macOS binary
+          done < <(find "$RUNNER_TEMP/swanium-sdl/lib" -name '*.dylib' -print0)
+          "$executable" --version
+      - name: Upload macOS app bundle
         uses: actions/upload-artifact@v4
         with:
           name: swanium-crystal-macos-${{ matrix.arch }}
-          path: bin/swanium-crystal
+          path: bin/Swanium Crystal.app
           if-no-files-found: error
