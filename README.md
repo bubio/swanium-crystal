@@ -1,49 +1,50 @@
 # Swanium Crystal
 
-macOS 向け WonderSwan Crystal エミュレータです。WonderSwan / WonderSwan Color の ROM も後方互換として実行できます。実 BIOS と ROM は同梱せず、利用者が合法的に所有する `.ws` / `.wsc` ファイルだけを開きます。
+Swanium Crystal は、WonderSwan Crystal、WonderSwan Color、WonderSwan のゲームを動かすエミュレータです。[Swanium](https://github.com/bubio/swanium)はRustとSlintで開発しましたが、これは、CrystalとSDL2開発しました。将来は複数のプラットフォームに対応する予定です。
 
-Version 1.0.0 (build 1) は macOS 13.5 以降に対応します。CPU、映像・入力、音声、SRAM、セーブステート、デバッグ機能を備えます。正確な対応範囲と Rust 版 Swanium との差分は [機能対応表](docs/feature-compatibility.md) を参照してください。
+## インストール
 
-## macOS で使う
+[Releases](https://github.com/bubio/swanium-crystal/releases) から、お使いの環境に合ったファイルをダウンロードしてください。
 
-リリースの `Swanium Crystal.app` を Applications などへ移動し、Finder から開きます。最初は ROM 未選択の画面が表示されるので、メニューバーの `Emulation` → `Open ROM…` から ROM を選びます。アドホック署名済みのローカルビルドは、そのまま Finder から起動できます。
+| プラットフォーム | CPU | 最小OS | 配布形式 | 状態 |
+| --- | --- | --- | --- | --- |
+| macOS | Apple Silicon / Intel | macOS 13.5 | `.app` | 対応済み |
+| Windows | — | — | — | 今後対応予定 |
+| Linux | — | — | — | 今後対応予定 |
 
-キーボード操作は、矢印キーが X 方向パッド、WASD が Y 方向パッド、X/Z が A/B、Return が Start、Escape が終了です。F5/F9 は ROM ごとのステート保存・復元です。SDL2 対応ゲームパッドでは方向パッド、A/B、Start を使えます。
+> **注意**: このアプリは Apple によるノータリゼーション（公証）を受けていないため、初回起動時に Gatekeeper によってブロックされる場合があります。以下のいずれかの方法で回避できます：
+>
+> **方法1: ターミナルで隔離フラグを削除**
+> ```bash
+> xattr -cr "/Applications/Swanium Crystal.app"
+> ```
+>
+> **方法2: システム設定から許可**
+> 1. アプリを開こうとしてブロックされた後
+> 2. 「システム設定」→「プライバシーとセキュリティ」を開く
+> 3. 「"Swanium Crystal"は開発元を確認できないため、使用がブロックされました」の横にある「このまま開く」をクリック
 
-セーブ RAM は `~/Library/Application Support/swanium-crystal/saves` に、ROM 名ごとに保存されます。ROM、ハッシュ、セーブデータ、スクリーンショットはプロジェクトや CI へ送信しません。
 
-## ビルドと検証
+## 操作方法
 
-開発には [mise](https://mise.jdx.dev/) と Homebrew が必要です。次の手順は Crystal 1.18.2 と SDL2 を導入し、テスト済みの自己完結型 `.app` バンドルを作成します。
+| 操作 | キーボード |
+| --- | --- |
+| X方向パッド | 矢印キー |
+| Y方向パッド | W / A / S / D |
+| A / B ボタン | X / Z |
+| Start | Return |
+| 終了 | Escape |
+| ステート保存 | F5 |
+| ステート読込 | F9 |
 
-```sh
-brew install mise sdl2 sdl3
-mise run setup
-mise run ci
-mise run build
-open "bin/Swanium Crystal.app"
-```
+対応するゲームパッドでは、方向パッド、A/B、Startが使えます。キーとゲームパッドの割り当ては、メニューから変更できます。
 
-バンドル内実行ファイルを使うと、ROM を直接指定したり、自動テスト用にヘッドレス起動したりできます。
+## セーブとステート
 
-```sh
-"./bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal" --version
-"./bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal" --rom /path/to/game.wsc
-"./bin/Swanium Crystal.app/Contents/MacOS/swanium-crystal" --rom /path/to/game.wsc --headless-frames 900
-```
+ゲーム内のセーブデータ（SRAM）は、ROMごとに自動保存されます。F5/F9のステート保存も、開いているROMごとに保存されます。
 
-`mise run ci` は整形チェック、ヘッドレス spec、自作カートリッジ fixture、SDL dummy video driver を使う起動確認を実行します。GUI の最小確認は `mise run sdl-smoke`、画面・入力・音声の手動確認は `mise run video-demo` です。公開テスト ROM を持っている場合だけ、`WS_CPU_TEST_ROM=/path/to/WSCpuTest.wsc mise run public-roms` で追加検証できます。
+| プラットフォーム | セーブデータ | ステート・設定 |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/swanium-crystal/saves` | `~/Library/Application Support/swanium-crystal` |
 
-## 開発資料
-
-[開発計画](docs/development-plan.md)、[設計](docs/architecture.md)、[テスト](docs/testing.md)、[開発規約](docs/development.md)、[ライセンス方針](docs/licensing.md) を参照してください。
-
-画面と入力の自作検証プログラムは次のコマンドで起動し、Escapeまたはウィンドウを閉じると終了します。
-
-```sh
-mise run video-demo
-```
-
-固定3倍（672×432）、60 Hz上限で表示します。矢印キーがX方向パッド、WASDがY方向パッド、Z/XがA/B、ReturnがStartです。SDL2対応ゲームパッドでは方向パッド、A/B、Startを利用できます。
-
-デモでは約440 Hzの音声も再生します。F1でデバッグ表示、Spaceで一時停止・再開、Nで1命令実行、1/2/3で背景1・背景2・スプライト表示を切り替えます。Page Up / Page Downはメモリ表示位置、F5 / F9は0番スロットの保存・復元です。デバッグ表示にはSDL音声キューの推定遅延とアンダーラン回数も表示します。
+セーブデータとステートを削除すると元に戻せません。必要に応じて、アップデート前や削除前にバックアップしてください。
