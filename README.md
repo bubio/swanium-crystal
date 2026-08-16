@@ -2,6 +2,8 @@
 
 Swanium Crystal は、WonderSwan Crystal、WonderSwan Color、WonderSwan のゲームを動かすエミュレータです。[Swanium](https://github.com/bubio/swanium)はRustとSlintで開発しましたが、これは、CrystalとSDL2開発しました。将来は複数のプラットフォームに対応する予定です。
 
+このプロジェクトは [MIT License](LICENSE) の下で提供されます。
+
 ## インストール
 
 [Releases](https://github.com/bubio/swanium-crystal/releases) から、お使いの環境に合ったファイルをダウンロードしてください。

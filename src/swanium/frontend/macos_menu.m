@@ -346,8 +346,11 @@ const char *swanium_macos_menu_open_rom(void) {
 
 void swanium_macos_menu_show_about(void) {
   NSAlert *alert = [[NSAlert alloc] init];
+  NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+  if (version == nil || version.length == 0) version = @"unknown";
   alert.messageText = @"Swanium Crystal";
-  alert.informativeText = @"WonderSwan and WonderSwan Color emulator.";
+  alert.informativeText = [NSString stringWithFormat:
+    @"WonderSwan and WonderSwan Color emulator.\n\nVersion %@\nLicensed under the MIT License.", version];
   [alert runModal];
 }
 
