@@ -26,6 +26,7 @@ esac
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$(dirname "$menu_object")"
 cp "$root/tools/macos/Info.plist" "$app/Contents/Info.plist"
+sh "$root/tools/build_macos_icon.sh" "$root/assets/macos/AppIcon.png" "$app/Contents/Resources/AppIcon.icns"
 sh "$root/tools/build_macos_menu.sh" "$menu_object"
 
 # shellcheck disable=SC2086

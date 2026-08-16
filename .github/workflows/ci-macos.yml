@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "spec/**"
+      - "assets/**"
       - "tools/**"
       - "mise.toml"
       - "mise.lock"
@@ -18,6 +19,7 @@ on:
     paths:
       - "src/**"
       - "spec/**"
+      - "assets/**"
       - "tools/**"
       - "mise.toml"
       - "mise.lock"
@@ -78,6 +80,7 @@ jobs:
           app='bin/Swanium Crystal.app'
           executable="$app/Contents/MacOS/swanium-crystal"
           test -f "$app/Contents/Info.plist"
+          test -f "$app/Contents/Resources/AppIcon.icns"
           test -f "$app/Contents/Frameworks/libSDL2-2.0.0.dylib"
           test -f "$app/Contents/Frameworks/libSDL3.dylib"
           version="$(sed -n 's/^version: *//p' shard.yml | head -n 1)"
