@@ -15,6 +15,11 @@ copy_library() {
   library=$1
   name=$(basename "$library")
   destination="$frameworks/$name"
+  # SDL2 can be discovered from the executable and also supplied explicitly
+  # below for SDL2-compat's runtime loading path. Copy it only once: release
+  # dylibs commonly preserve a read-only mode, so a second cp cannot replace
+  # the first destination reliably.
+  test -f "$destination" && return
   cp -L "$library" "$destination"
   install_name_tool -id "@rpath/$name" "$destination"
 }

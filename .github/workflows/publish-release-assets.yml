@@ -1,0 +1,59 @@
+name: Publish Release Assets
+
+on:
+  workflow_call:
+    inputs:
+      asset-patterns:
+        description: Newline-separated filename globs to upload as release assets.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine version
+        id: version
+        run: |
+          version="$(sed -n 's/^version: *//p' shard.yml | head -n 1)"
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          ASSET_PATTERNS: ${{ inputs.asset-patterns }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          test -n "$RELEASE_TAG"
+          mapfile -t all_files < <(find release-assets -type f -print)
+          assets=()
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            for file in "${all_files[@]}"; do
+              case "$(basename "$file")" in
+                $pattern) assets+=("$file") ;;
+              esac
+            done
+          done <<< "$ASSET_PATTERNS"
+          [ "${#assets[@]}" -gt 0 ] || { echo "No release assets found." >&2; exit 1; }
+          for asset in "${assets[@]}"; do
+            case "$(basename "$asset")" in
+              "Swanium-Crystal-${VERSION}-macos-arm64.zip" | \
+              "Swanium-Crystal-${VERSION}-macos-x86_64.zip") ;;
+              *) echo "Unexpected release asset name: $(basename "$asset")" >&2; exit 1 ;;
+            esac
+          done
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber

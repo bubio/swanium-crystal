@@ -1,4 +1,5 @@
 /.shards/
 /lib/
 /bin/swanium
+/dist/
 /.mise.local.toml

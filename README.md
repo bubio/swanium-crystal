@@ -5,6 +5,8 @@ Swanium Crystal は、WonderSwan Crystal、WonderSwan Color、WonderSwan のゲ�
 ## インストール
 
 [Releases](https://github.com/bubio/swanium-crystal/releases) から、お使いの環境に合ったファイルをダウンロードしてください。
+macOS 向けには `Swanium-Crystal-<version>-macos-arm64.zip` または
+`Swanium-Crystal-<version>-macos-x86_64.zip` を展開して利用します。
 
 | プラットフォーム | CPU | 最小OS | 配布形式 | 状態 |
 | --- | --- | --- | --- | --- |

@@ -118,14 +118,15 @@ shard.yml
 
 ## CI と mise の方針
 
-ローカル開発と CI の検証コマンドを乖離させないため、CI も mise を使う。GitHub Actions の YAML は OS ごとのシステム依存を導入してから `mise run ci` を呼ぶだけにし、ビルド・整形・テストの手順を YAML に重複して書かない。
+ローカル開発と CI の検証コマンドを乖離させないため、CI も mise を使う。GitHub Actions の YAML は OS ごとのシステム依存を導入してから `mise run ci` を呼ぶだけにし、ビルド・整形・テストの手順を YAML に重複して書かない。macOS の `ci-macos.yml` は検証とアーカイブ作成を担当し、release asset の公開は将来の他 OS workflow からも呼べる `publish-release-assets.yml` に分離する。
 
 - [x] `mise.toml` に Crystal と開発ツールの固定バージョン、`format`、`spec`、`build`、`ci` タスクを定義する
 - [x] `ci` タスクを `format`、`spec`、`build` の集約タスクにし、ローカルと GitHub Actions の両方で `mise run ci` を実行する
 - [x] GitHub Actions では `jdx/mise-action` を固定したバージョンまたはコミットで使用し、mise のツールキャッシュを有効にする
-- [x] macOS job では Homebrew を用いて SDL2 と必要な開発ヘッダを明示的に導入する。OS パッケージは mise の管理対象にしない
+- [x] macOS job では固定版 SDL3 と SDL2-compat を公式ソースから取得し、SHA-256 を検証して最小対応 macOS 向けにビルドする。OS 依存は mise の管理対象にしない
 - [x] 自作 fixture を使う通常 CI と、ローカル環境変数で公開テスト ROM を与えた opt-in 検証を分離する。通常 CI は `mise run ci`、公開テスト ROM のローカル検証は `mise run public-roms` を使う
 - [x] `mise.lock` を導入した場合はリポジトリにコミットし、CI で解決済みバージョンを再現する
+- [x] macOS の `.app` 組立と配布 ZIP 作成を専用スクリプトに分離し、release 公開時は共通 workflow から GitHub Release へアップロードする
 
 Crystal の公式 GitHub Actions ガイドは Crystal の導入方法の参考にするが、プロジェクト固有の検証入口は mise に統一する。
 

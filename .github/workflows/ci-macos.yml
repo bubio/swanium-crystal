@@ -1,28 +1,37 @@
-name: CI
+name: CI macOS
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - "src/**"
       - "spec/**"
       - "tools/**"
       - "mise.toml"
+      - "mise.lock"
       - "shard.yml"
-      - ".github/workflows/ci.yml"
+      - "shard.lock"
+      - ".github/workflows/ci-macos.yml"
+      - ".github/workflows/publish-release-assets.yml"
   pull_request:
+    branches: [main, master]
     paths:
       - "src/**"
       - "spec/**"
       - "tools/**"
       - "mise.toml"
+      - "mise.lock"
       - "shard.yml"
-      - ".github/workflows/ci.yml"
+      - "shard.lock"
+      - ".github/workflows/ci-macos.yml"
+      - ".github/workflows/publish-release-assets.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 permissions:
   contents: read
@@ -32,7 +41,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "13.5"
 
 jobs:
-  check:
+  test-and-bundle:
     name: macOS ${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -71,7 +80,8 @@ jobs:
           test -f "$app/Contents/Info.plist"
           test -f "$app/Contents/Frameworks/libSDL2-2.0.0.dylib"
           test -f "$app/Contents/Frameworks/libSDL3.dylib"
-          test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "1.0.0"
+          version="$(sed -n 's/^version: *//p' shard.yml | head -n 1)"
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$version"
           test "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" = "1"
           codesign --verify --deep --strict --verbose=2 "$app"
           file "$executable"
@@ -89,9 +99,40 @@ jobs:
             '
           done < <(find "$RUNNER_TEMP/swanium-sdl/lib" -name '*.dylib' -print0)
           "$executable" --version
-      - name: Upload macOS app bundle
+      - name: Prepare release archive
+        if: github.event_name == 'release'
+        run: |
+          version="$(plutil -extract CFBundleShortVersionString raw 'bin/Swanium Crystal.app/Contents/Info.plist')"
+          mkdir -p dist
+          sh tools/package_macos_app.sh 'bin/Swanium Crystal.app' "dist/Swanium-Crystal-${version}-macos-${{ matrix.arch }}.zip"
+      - name: Prepare App Bundle artifact
+        if: github.event_name != 'release'
+        run: |
+          artifact_dir="$RUNNER_TEMP/swanium-crystal-artifact"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+          ditto 'bin/Swanium Crystal.app' "$artifact_dir/Swanium Crystal.app"
+      - name: Upload App Bundle artifact
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: swanium-crystal-macos-${{ matrix.arch }}
-          path: bin/Swanium Crystal.app
+          path: ${{ runner.temp }}/swanium-crystal-artifact/
           if-no-files-found: error
+      - name: Upload release archive
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swanium-crystal-macos-${{ matrix.arch }}
+          path: dist/Swanium-Crystal-*-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'release'
+    needs: test-and-bundle
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release-assets.yml
+    with:
+      asset-patterns: |
+        *.zip
