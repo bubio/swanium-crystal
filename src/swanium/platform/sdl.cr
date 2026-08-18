@@ -15,6 +15,7 @@ module Swanium
       INIT_AUDIO                 = 0x00000010_u32
       INIT_GAMECONTROLLER        = 0x00002000_u32
       WINDOW_SHOWN               = 0x00000004_u32
+      WINDOW_HIDDEN              = 0x00000008_u32
       WINDOW_FULLSCREEN_DESKTOP  = 0x00001001_u32
       RENDERER_ACCELERATED       = 0x00000002_u32
       TEXTUREACCESS_STREAMING    =              1
@@ -47,6 +48,11 @@ module Swanium
       HAT_RIGHT                  =    0x02_u8
       HAT_DOWN                   =    0x04_u8
       HAT_LEFT                   =    0x08_u8
+      {% if flag?(:linux) %}
+        GAME_WINDOW_FLAGS = WINDOW_HIDDEN
+      {% else %}
+        GAME_WINDOW_FLAGS = WINDOW_SHOWN
+      {% end %}
 
       # SDL scancodes are layout-independent and therefore stable for games.
       SC_A        =  4
@@ -234,7 +240,7 @@ module Swanium
             "Swanium Crystal - video and input test",
             window_x, window_y,
             Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22,
-            WINDOW_SHOWN
+            GAME_WINDOW_FLAGS
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
@@ -314,7 +320,11 @@ module Swanium
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
-              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% if flag?(:linux) %}
+                Frontend::LinuxMenu.fullscreen = fullscreen
+              {% else %}
+                check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% end %}
             end
             if requested_renderer = controls.take_renderer_request
               renderer_mode = requested_renderer
@@ -335,7 +345,11 @@ module Swanium
             keys, escape = input_state(controller)
             if escape && fullscreen
               fullscreen = false
-              check(LibSDL.set_window_fullscreen(window, 0_u32))
+              {% if flag?(:linux) %}
+                Frontend::LinuxMenu.fullscreen = false
+              {% else %}
+                check(LibSDL.set_window_fullscreen(window, 0_u32))
+              {% end %}
             end
             if debugger.paused
               debugger.run_instruction?(machine, bus)
@@ -365,10 +379,14 @@ module Swanium
             end
             controls.update_status("Video demo", fps, debugger.paused)
             controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
-            check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
-            check(LibSDL.render_clear(renderer))
-            render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
-            LibSDL.render_present(renderer)
+            {% if flag?(:linux) %}
+              Frontend::LinuxMenu.present(rgba, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
+            {% else %}
+              check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
+              check(LibSDL.render_clear(renderer))
+              render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
+              LibSDL.render_present(renderer)
+            {% end %}
             presented_frames &+= 1_u32
             # Pace to the WonderSwan's 159-line frame period, independently of
             # the host display's refresh rate.
@@ -505,7 +523,11 @@ module Swanium
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
-              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% if flag?(:linux) %}
+                Frontend::LinuxMenu.fullscreen = fullscreen
+              {% else %}
+                check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% end %}
             end
             if requested_renderer = controls.take_renderer_request
               renderer_mode = requested_renderer
@@ -529,7 +551,11 @@ module Swanium
             keys = rotate_input_right(keys) if vertical
             if escape && fullscreen
               fullscreen = false
-              check(LibSDL.set_window_fullscreen(window, 0_u32))
+              {% if flag?(:linux) %}
+                Frontend::LinuxMenu.fullscreen = false
+              {% else %}
+                check(LibSDL.set_window_fullscreen(window, 0_u32))
+              {% end %}
             end
             queued_audio = LibSDL.get_queued_audio_size(audio_device)
             if debugger.paused
@@ -565,10 +591,14 @@ module Swanium
             end
             controls.update_status(title, fps, debugger.paused)
             controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
-            check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
-            check(LibSDL.render_clear(renderer))
-            render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
-            LibSDL.render_present(renderer)
+            {% if flag?(:linux) %}
+              Frontend::LinuxMenu.present(displayed_rgba, display_width, display_height)
+            {% else %}
+              check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
+              check(LibSDL.render_clear(renderer))
+              render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
+              LibSDL.render_present(renderer)
+            {% end %}
             presented_frames &+= 1_u32
             next_frame = wait_for_next_frame(next_frame, frame_ticks, frequency)
           end
@@ -599,7 +629,7 @@ module Swanium
             WINDOWPOS_CENTERED,
             320,
             240,
-            WINDOW_SHOWN
+            GAME_WINDOW_FLAGS
           )
           raise SdlError.new(error_message) if window.null?
 
@@ -633,7 +663,7 @@ module Swanium
           window = LibSDL.create_window(
             "Swanium Crystal", window_x, window_y,
             Core::Ppu::SCREEN_WIDTH * scale, Core::Ppu::SCREEN_HEIGHT * scale + 22,
-            WINDOW_SHOWN
+            GAME_WINDOW_FLAGS
           )
           raise SdlError.new(error_message) if window.null?
           controls.install_menus
@@ -661,7 +691,11 @@ module Swanium
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
-              check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% if flag?(:linux) %}
+                Frontend::LinuxMenu.fullscreen = fullscreen
+              {% else %}
+                check(LibSDL.set_window_fullscreen(window, fullscreen ? WINDOW_FULLSCREEN_DESKTOP : 0_u32))
+              {% end %}
             end
             controls.update_menu_state(false, scale, fullscreen, 0)
             check(LibSDL.render_clear(renderer))

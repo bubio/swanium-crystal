@@ -12,7 +12,7 @@ macOS 向けには `Swanium-Crystal-<version>-macos-arm64.zip` または
 | --- | --- | --- | --- | --- |
 | macOS | Apple Silicon / Intel | macOS 13.5 | `.app` | 対応済み |
 | Windows | — | — | — | 今後対応予定 |
-| Linux | — | — | — | 今後対応予定 |
+| Linux | x86_64 | GTK 3 対応ディストリビューション | `.deb` / `.rpm` / AppImage | 対応中 |
 
 > **注意**: このアプリは Apple によるノータリゼーション（公証）を受けていないため、初回起動時に Gatekeeper によってブロックされる場合があります。以下のいずれかの方法で回避できます：
 >

@@ -22,7 +22,7 @@ end
 
 module Swanium
   module Frontend
-    # AppKit submenus used where libui-ng exposes only flat menu items.
+    # AppKit adapter for macOS-native menus and status controls.
     module MacosMenu
       OPEN_ROM        =   1
       ABOUT           =  41

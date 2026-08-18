@@ -2,14 +2,14 @@
 
 ## 必要なもの
 
-最初の対応環境は macOS である。[mise](https://mise.jdx.dev/) を導入してから、次を実行する。
+対応環境は macOS と Linux である。[mise](https://mise.jdx.dev/) を導入してから、次を実行する。
 
 ```sh
 mise run setup
 mise run ci
 ```
 
-Crystal は mise が導入する。ローカル開発では SDL2-compat と SDL3 のOS開発ライブラリを使うため、macOS では `brew install sdl2 sdl3` を一度だけ実行する。固定対象の LLVM は Crystal 1.18.2 公式配布物に同梱される版（15.0.7）、SDL2-compat は 2.32.70、SDL3 は 3.4.12 であり、`mise.toml` の `vars` に記録する。Linux など他プラットフォームの導入手順は、macOS の市販ゲーム互換性を達成した後に追加する。
+Crystal は mise が導入する。macOS では SDL2-compat と SDL3 のOS開発ライブラリを使うため、`brew install sdl2 sdl3` を一度だけ実行する。Linux では SDL2 と GTK3 の開発ライブラリが必要である。`mise run build-linux` は GTK3 ネイティブ操作ウィンドウと SDL2 ゲーム画面を含む最適化済み実行ファイルを生成する。`mise run package-linux-deb`、`mise run package-linux-rpm`、`mise run package-linux-appimage` は各配布物を生成する（RPM は `rpmbuild`、AppImage は `LINUXDEPLOY` を必要とする）。
 
 `mise run ci` は整形チェック、画面fixtureを含むheadless spec、最適化済みリリース `.app` バンドル、自作カートリッジによるCLIの900フレーム統合テスト、SDL2 dummyビデオドライバの起動確認を実行する。整形を適用する場合は `mise run format-fix` を使う。GitHub Actions は `tools/build_macos_sdl.sh` で公式リリースの SDL3 3.4.12 と SDL2-compat 2.32.70 のソースtarballをSHA-256検証して取得し、macOS 13.5向けにビルドする。Homebrewのバイナリは使わない。`assets/macos/AppIcon.png` は配布用の1024pxアイコン原画で、`tools/build_macos_icon.sh` が bundle resource の `AppIcon.icns` を生成する。`tools/build_macos_app.sh` はアイコンとメニューのコンパイル、アプリバンドルの組立、依存 dylib の同梱、ad-hoc 署名を担当し、`tools/package_macos_app.sh` は完成した `.app` を配布 ZIP にするだけに限定する。`mise run build` は `bin/Swanium Crystal.app` に `--release --no-debug` の最適化済みmacOSアプリケーションバンドルを生成し、SDL2-compat、SDL3、OpenSSL を `Contents/Frameworks` へ同梱する。`mise run package-macos` はアーキテクチャ名付きの ZIP を `dist/` に生成する。デバッガ作業だけは `mise run build-debug` を使う。音声はAPUの24 kHz出力を、SDL2が選択したホストレートへ状態を保った線形補間で変換し、50 msを下回る場合だけエミュレーションを先行させる。`mise run sdl-smoke` はデスクトップセッションでバンドルを起動してSDL2のウィンドウ作成を確認し、`mise run video-demo` は実際の映像と入力を確認する。CIとコアのspecはヘッドレスで実行できる。
 
