@@ -6,7 +6,7 @@ lib LibLinuxMenu
   fun pump = swanium_linux_menu_pump : Nil
   fun take_action = swanium_linux_menu_take_action : Int32
   fun open_rom = swanium_linux_menu_open_rom : LibC::Char*
-  fun status = swanium_linux_menu_status(text : LibC::Char*) : Nil
+  fun status = swanium_linux_menu_status(title : LibC::Char*, fps : LibC::Char*) : Nil
   fun recent = swanium_linux_menu_recent(paths : LibC::Char**) : Nil
   fun recent_path = swanium_linux_menu_recent_path(index : Int32) : LibC::Char*
   fun state_slots = swanium_linux_menu_state_slots(labels : LibC::Char**, available : Int32*) : Nil
@@ -64,8 +64,8 @@ module Swanium::Frontend::LinuxMenu
     path = LibLinuxMenu.open_rom; path.null? ? nil : String.new(path)
   end
 
-  def self.status=(value : String) : Nil
-    LibLinuxMenu.status(value)
+  def self.status(title : String, fps : String) : Nil
+    LibLinuxMenu.status(title, fps)
   end
 
   def self.recent=(paths : Array(String)) : Nil

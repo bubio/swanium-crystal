@@ -117,7 +117,7 @@ module Swanium::Frontend
     end
 
     def update_status(title : String, fps : Float64, paused : Bool) : Nil
-      LinuxMenu.status = "#{title} — #{paused ? "paused" : "#{fps.round.to_i} fps"}"
+      LinuxMenu.status(title, paused ? "paused" : "#{fps.round.to_i} fps")
     end
 
     def update_menu_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil

@@ -785,6 +785,9 @@ module Swanium
                 smoke_height = 224
                 smoke_scale = 2
                 resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 15
+                smoke_scale = 1
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
               elsif frame == 18
                 smoke_width = 224
                 smoke_height = 144
