@@ -264,8 +264,19 @@ module Swanium
       private def self.resize_game_window(controls : Frontend::NativeControls, window : Void*, width : Int32, height : Int32, scale : Int32) : Nil
         {% if flag?(:linux) %}
           controls.resize_game(width, height, scale)
+          # SDL_CreateWindowFrom does not reliably observe GTK's child-window
+          # allocation changes. Resize the foreign SDL wrapper explicitly so
+          # its renderer output follows the selected integer scale.
+          LibSDL.set_window_size(window, width * scale, height * scale)
         {% else %}
           LibSDL.set_window_size(window, width * scale, height * scale + controls.reserved_status_height(window))
+        {% end %}
+      end
+
+      private def self.sync_game_window_size(window : Void*) : Nil
+        {% if flag?(:linux) %}
+          width, height = Frontend::LinuxMenu.game_size
+          LibSDL.set_window_size(window, width, height) if width > 0 && height > 0
         {% end %}
       end
 
@@ -431,6 +442,7 @@ module Swanium
             end
             controls.update_status("Video demo", fps, debugger.paused)
             controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
+            sync_game_window_size(window)
             check(LibSDL.update_texture(texture, Pointer(Void).null, rgba.to_unsafe.as(Void*), Core::Ppu::SCREEN_WIDTH * 4))
             check(LibSDL.render_clear(renderer))
             render_game(renderer, texture, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, controls.reserved_status_height(window))
@@ -652,6 +664,7 @@ module Swanium
             end
             controls.update_status(title, fps, debugger.paused)
             controls.update_menu_state(debugger.paused, scale, fullscreen, renderer_mode)
+            sync_game_window_size(window)
             check(LibSDL.update_texture(texture, Pointer(Void).null, displayed_rgba.to_unsafe.as(Void*), display_width * 4))
             check(LibSDL.render_clear(renderer))
             render_game(renderer, texture, display_width, display_height, controls.reserved_status_height(window))
@@ -685,13 +698,15 @@ module Swanium
           renderer = Pointer(Void).null
           texture = Pointer(Void).null
           smoke_controller = nil.as(Controller?)
+          smoke_scale = controls.initial_scale
           begin
             window = create_game_window(controls, "Swanium Crystal SDL2 smoke test",
-              WINDOWPOS_CENTERED, WINDOWPOS_CENTERED, 224, 144, 2, WINDOW_SHOWN)
+              WINDOWPOS_CENTERED, WINDOWPOS_CENTERED, 224, 144, smoke_scale, WINDOW_SHOWN)
             renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
             renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
             raise SdlError.new(error_message) if renderer.null?
             Frontend::LinuxMenu.present
+            raise SdlError.new("GTK game window must not be user-resizable") if Frontend::LinuxMenu.window_resizable?
             texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING, 224, 144)
             raise SdlError.new(error_message) if texture.null?
             pixels = Bytes.new(224 * 144 * 4, 0x40_u8)
@@ -700,13 +715,16 @@ module Swanium
             render_game(renderer, texture, 224, 144, 0)
             LibSDL.render_present(renderer)
             expect_keyboard = ENV["SWANIUM_EXPECT_KEYBOARD_SMOKE"]? == "1"
+            keyboard_smoke_frames = ENV["SWANIUM_KEYBOARD_SMOKE_FRAMES"]?.try(&.to_i?) || 600
             keyboard_seen = false
             joystick_added = false
             joystick_removed = false
             product_controller_opened = false
             virtual_joystick = -1
+            smoke_width = 224
+            smoke_height = 144
             event = uninitialized LibSDL::Event
-            (expect_keyboard ? 600 : 28).times do |frame|
+            (expect_keyboard ? {keyboard_smoke_frames, 65}.max : 65).times do |frame|
               if frame == 0
                 Frontend::LinuxMenu.smoke_open_settings
               elsif frame == 1
@@ -762,11 +780,55 @@ module Swanium
                 check(LibSDL.joystick_detach_virtual(virtual_joystick))
                 virtual_joystick = -1
               end
-              resize_game_window(controls, window, 144, 224, 2) if frame == 11
-              resize_game_window(controls, window, 224, 144, 2) if frame == 16
-              resize_game_window(controls, window, 224, 144, frame - 16) if frame.in?(17..20)
-              resize_game_window(controls, window, 224, 144, 2) if frame == 21
+              if frame == 11
+                smoke_width = 144
+                smoke_height = 224
+                smoke_scale = 2
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 18
+                smoke_width = 224
+                smoke_height = 144
+                smoke_scale = 2
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 25
+                smoke_scale = 1
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 37
+                smoke_scale = 2
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 44
+                smoke_scale = 3
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 51
+                smoke_scale = 4
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              elsif frame == 58
+                smoke_scale = 2
+                resize_game_window(controls, window, smoke_width, smoke_height, smoke_scale)
+              end
               controls.pump
+              sync_game_window_size(window)
+              verify_size = frame.in?(0..8) || frame.in?({16, 23, 35, 42, 49, 56, 63})
+              if verify_size
+                expected_width = smoke_width * smoke_scale
+                expected_height = smoke_height * smoke_scale
+                gtk_width, gtk_height = Frontend::LinuxMenu.game_size
+                unless gtk_width == expected_width && gtk_height == expected_height
+                  menu_min, status_min = Frontend::LinuxMenu.chrome_min_widths
+                  raise SdlError.new("GTK game area size mismatch: expected #{expected_width}x#{expected_height}, " \
+                                     "got #{gtk_width}x#{gtk_height} (menu min=#{menu_min}, status min=#{status_min})")
+                end
+                output_width = 0
+                output_height = 0
+                check(LibSDL.get_renderer_output_size(renderer, pointerof(output_width), pointerof(output_height)))
+                pixel_scale = Frontend::LinuxMenu.game_scale_factor
+                unless output_width == expected_width * pixel_scale && output_height == expected_height * pixel_scale
+                  raise SdlError.new("SDL renderer output size mismatch: expected #{expected_width * pixel_scale}x#{expected_height * pixel_scale}, got #{output_width}x#{output_height}")
+                end
+              end
+              check(LibSDL.render_clear(renderer))
+              render_game(renderer, texture, smoke_width, smoke_height, 0)
+              LibSDL.render_present(renderer)
               while LibSDL.poll_event(pointerof(event)) != 0
                 keyboard_seen = true if event.type == EVENT_KEYDOWN
                 if event.type == EVENT_JOYSTICK_ADDED
@@ -876,6 +938,7 @@ module Swanium
               {% end %}
             end
             controls.update_menu_state(false, scale, fullscreen, 0)
+            sync_game_window_size(window)
             check(LibSDL.render_clear(renderer))
             LibSDL.render_present(renderer)
             LibSDL.delay(16_u32)

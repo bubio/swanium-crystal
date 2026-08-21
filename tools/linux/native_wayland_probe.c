@@ -5,6 +5,9 @@
 #include <stdio.h>
 
 static int closed;
+static int keyboard_input_seen;
+static int sdl_keyboard_input_seen;
+static int focus_seen;
 
 static gboolean close_window(GtkWidget *widget, GdkEvent *event, gpointer data) {
   (void)widget;
@@ -14,11 +17,28 @@ static gboolean close_window(GtkWidget *widget, GdkEvent *event, gpointer data) 
   return TRUE;
 }
 
+static gboolean key_press(GtkWidget *widget, GdkEventKey *event, gpointer data) {
+  (void)widget;
+  (void)event;
+  (void)data;
+  keyboard_input_seen = 1;
+  return FALSE;
+}
+
+static gboolean focus_in(GtkWidget *widget, GdkEventFocus *event, gpointer data) {
+  (void)widget;
+  (void)event;
+  (void)data;
+  focus_seen = 1;
+  return FALSE;
+}
+
 static void fail(const char *operation) {
   fprintf(stderr, "wayland-probe: %s failed: %s\n", operation, SDL_GetError());
 }
 
 int main(void) {
+  const int expect_input = g_strcmp0(g_getenv("SWANIUM_EXPECT_WAYLAND_INPUT"), "1") == 0;
   g_setenv("GDK_BACKEND", "wayland", TRUE);
   g_setenv("SDL_VIDEODRIVER", "wayland", TRUE);
   if (!gtk_init_check(NULL, NULL)) {
@@ -45,10 +65,15 @@ int main(void) {
   GtkWidget *top = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   GtkWidget *area = gtk_drawing_area_new();
   gtk_window_set_title(GTK_WINDOW(top), "GTK3 + SDL3 native Wayland probe");
+  gtk_widget_set_can_focus(area, TRUE);
   gtk_widget_set_size_request(area, 448, 288);
   gtk_container_add(GTK_CONTAINER(top), area);
   g_signal_connect(top, "delete-event", G_CALLBACK(close_window), NULL);
+  g_signal_connect(top, "focus-in-event", G_CALLBACK(focus_in), NULL);
+  g_signal_connect(area, "key-press-event", G_CALLBACK(key_press), NULL);
   gtk_widget_show_all(top);
+  gtk_window_present(GTK_WINDOW(top));
+  gtk_widget_grab_focus(area);
   while (gtk_events_pending()) gtk_main_iteration();
 
   GdkWindow *gdk_window = gtk_widget_get_window(area);
@@ -110,10 +135,14 @@ int main(void) {
   int rotated_width = 0, rotated_height = 0;
   int expanded_width = 0, expanded_height = 0;
   int restored_width = 0, restored_height = 0;
-  for (int frame = 0; frame < 240 && !closed; frame++) {
+  const int frame_limit = expect_input ? 900 : 240;
+  for (int frame = 0; frame < frame_limit && !closed; frame++) {
     while (gtk_events_pending()) gtk_main_iteration();
     SDL_Event event;
-    while (SDL_PollEvent(&event)) if (event.type == SDL_EVENT_QUIT) closed = 1;
+    while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_EVENT_QUIT) closed = 1;
+      if (event.type == SDL_EVENT_KEY_DOWN) sdl_keyboard_input_seen = 1;
+    }
     if (frame == 30) {
       initial_width = gtk_widget_get_allocated_width(area);
       initial_height = gtk_widget_get_allocated_height(area);
@@ -175,6 +204,11 @@ int main(void) {
     fputs("wayland-probe: resize or HiDPI dimensions did not match\n", stderr);
     closed = 1;
   }
+  if (expect_input && (!focus_seen || (!keyboard_input_seen && !sdl_keyboard_input_seen))) {
+    fprintf(stderr, "wayland-probe: seat input did not complete (focus=%d gdk-keyboard=%d sdl-keyboard=%d)\n",
+            focus_seen, keyboard_input_seen, sdl_keyboard_input_seen);
+    closed = 1;
+  }
   SDL_DestroyTexture(texture);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(wrapper);
@@ -182,7 +216,13 @@ int main(void) {
   while (gtk_events_pending()) gtk_main_iteration();
   SDL_Quit();
   if (!closed) {
-    fputs("wayland-probe: shared display, resize, rotation, render, input polling, HiDPI, and shutdown passed\n", stderr);
+    if (expect_input) {
+      fprintf(stderr, "wayland-probe: shared display, resize, rotation, render, seat keyboard input "
+                      "(GDK=%d SDL=%d), focus, HiDPI, and shutdown passed\n",
+              keyboard_input_seen, sdl_keyboard_input_seen);
+    } else {
+      fputs("wayland-probe: shared display, resize, rotation, render, input polling, HiDPI, and shutdown passed\n", stderr);
+    }
     return 0;
   }
   return 1;

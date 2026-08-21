@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 static GtkWidget *window, *status_label, *volume_slider, *game_area, *recent_menu, *load_root;
+static GtkWidget *menu_bar_widget, *status_bar_widget;
 static GtkWidget *save_items[10], *load_items[10];
 static GtkWidget *pause_item, *scale_items[4], *fullscreen_item, *renderer_items[2];
 static GtkWidget *settings_window, *keyboard_buttons[11], *controller_buttons[3], *direction_boxes[3];
@@ -13,6 +14,8 @@ static char *present_title;
 static char *recent_paths[10];
 static char error_text[256];
 static int frame_width = 224, frame_height = 144, display_scale = 3;
+static int fullscreen_enabled;
+static guint resize_lock_source;
 static Uint8 key_state[SDL_NUM_SCANCODES];
 
 enum { OPEN_ROM = 1, PAUSE = 4, RESET = 5, SCALE_1 = 11, FULLSCREEN = 20,
@@ -34,6 +37,13 @@ static gboolean close_window(GtkWidget *widget, GdkEvent *event, gpointer data) 
 }
 static void direction_changed(GtkComboBox *box, gpointer data) { if (!syncing_menu) action = 6000 + GPOINTER_TO_INT(data) * 10 + gtk_combo_box_get_active(box); }
 
+static gboolean finish_programmatic_resize(gpointer data) {
+  (void)data;
+  resize_lock_source = 0;
+  if (window && !fullscreen_enabled) gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+  return G_SOURCE_REMOVE;
+}
+
 static void resize_for_frame(void) {
   if (!window || !game_area || frame_width <= 0 || frame_height <= 0) return;
   int width = frame_width * display_scale;
@@ -43,7 +53,19 @@ static void resize_for_frame(void) {
   gtk_widget_get_allocation(game_area, &game_allocation);
   int chrome_height = MAX(0, window_allocation.height - game_allocation.height);
   gtk_widget_set_size_request(game_area, width, height);
+  if (fullscreen_enabled) return;
+  if (resize_lock_source) {
+    g_source_remove(resize_lock_source);
+    resize_lock_source = 0;
+  }
+  gtk_window_set_resizable(GTK_WINDOW(window), TRUE);
+  GdkGeometry geometry = {0};
+  geometry.min_width = geometry.max_width = width;
+  geometry.min_height = geometry.max_height = height + chrome_height;
+  gtk_window_set_geometry_hints(GTK_WINDOW(window), NULL, &geometry,
+                                GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE);
   gtk_window_resize(GTK_WINDOW(window), width, height + chrome_height);
+  resize_lock_source = g_timeout_add(20, finish_programmatic_resize, NULL);
 }
 
 static GtkWidget *menu_item(GtkWidget *menu, const char *title, int id) {
@@ -55,6 +77,11 @@ static GtkWidget *menu_item(GtkWidget *menu, const char *title, int id) {
 
 static void add_accelerator(GtkWidget *item, GtkAccelGroup *group, guint key, GdkModifierType modifiers) {
   gtk_widget_add_accelerator(item, "activate", group, key, modifiers, GTK_ACCEL_VISIBLE);
+}
+
+static void allow_menu_root_to_shrink(GtkWidget *item) {
+  GtkWidget *label = gtk_bin_get_child(GTK_BIN(item));
+  if (GTK_IS_LABEL(label)) gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
 }
 
 static SDL_Keycode sdl_keycode_from_gdk(guint keyval) {
@@ -121,6 +148,7 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
     return NULL;
   }
   window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
   G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   gtk_window_set_wmclass(GTK_WINDOW(window), "swanium-crystal", "Swanium-crystal");
   G_GNUC_END_IGNORE_DEPRECATIONS
@@ -133,8 +161,9 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
   gtk_window_add_accel_group(GTK_WINDOW(window), accelerators);
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_container_add(GTK_CONTAINER(window), box);
-  GtkWidget *bar = gtk_menu_bar_new(); gtk_box_pack_start(GTK_BOX(box), bar, FALSE, FALSE, 0);
+  GtkWidget *bar = gtk_menu_bar_new(); menu_bar_widget = bar; gtk_box_pack_start(GTK_BOX(box), bar, FALSE, FALSE, 0);
   GtkWidget *file = gtk_menu_new(), *file_root = gtk_menu_item_new_with_label("File");
+  allow_menu_root_to_shrink(file_root);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(file_root), file); gtk_menu_shell_append(GTK_MENU_SHELL(bar), file_root);
   GtkWidget *open_item = menu_item(file, "Open ROM…", OPEN_ROM); add_accelerator(open_item, accelerators, GDK_KEY_o, GDK_CONTROL_MASK);
   recent_menu = gtk_menu_new(); GtkWidget *recent_root = gtk_menu_item_new_with_label("Open Recent"); gtk_menu_item_set_submenu(GTK_MENU_ITEM(recent_root), recent_menu); gtk_menu_shell_append(GTK_MENU_SHELL(file), recent_root);
@@ -146,10 +175,12 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
   GtkWidget *settings_item = menu_item(file, "Settings…", SETTINGS); add_accelerator(settings_item, accelerators, GDK_KEY_comma, GDK_CONTROL_MASK);
   GtkWidget *quit_item = menu_item(file, "Quit", QUIT); add_accelerator(quit_item, accelerators, GDK_KEY_q, GDK_CONTROL_MASK);
   GtkWidget *emu = gtk_menu_new(), *emu_root = gtk_menu_item_new_with_label("Emulation");
+  allow_menu_root_to_shrink(emu_root);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(emu_root), emu); gtk_menu_shell_append(GTK_MENU_SHELL(bar), emu_root);
   pause_item = menu_item(emu, "Pause", PAUSE); add_accelerator(pause_item, accelerators, GDK_KEY_p, GDK_CONTROL_MASK);
   GtkWidget *reset_item = menu_item(emu, "Reset", RESET); add_accelerator(reset_item, accelerators, GDK_KEY_r, GDK_CONTROL_MASK);
   GtkWidget *view = gtk_menu_new(), *view_root = gtk_menu_item_new_with_label("View");
+  allow_menu_root_to_shrink(view_root);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(view_root), view); gtk_menu_shell_append(GTK_MENU_SHELL(bar), view_root);
   GtkWidget *scale = gtk_menu_new(), *scale_root = gtk_menu_item_new_with_label("Scale"); gtk_menu_item_set_submenu(GTK_MENU_ITEM(scale_root), scale); gtk_menu_shell_append(GTK_MENU_SHELL(view), scale_root);
   GSList *scale_group = NULL;
@@ -162,6 +193,7 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
   renderer_items[1] = gtk_radio_menu_item_new_with_label(renderer_group, "Bilinear");
   for (int i = 0; i < 2; i++) { g_signal_connect(renderer_items[i], "activate", G_CALLBACK(activate), GINT_TO_POINTER(RENDER_NEAREST + i)); gtk_menu_shell_append(GTK_MENU_SHELL(renderer), renderer_items[i]); }
   GtkWidget *help = gtk_menu_new(), *help_root = gtk_menu_item_new_with_label("Help");
+  allow_menu_root_to_shrink(help_root);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(help_root), help); gtk_menu_shell_append(GTK_MENU_SHELL(bar), help_root);
   menu_item(help, "About Swanium Crystal", ABOUT);
   game_area = gtk_drawing_area_new();
@@ -176,7 +208,7 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
 
   GtkWidget *separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
   gtk_box_pack_start(GTK_BOX(box), separator, FALSE, FALSE, 0);
-  GtkWidget *status_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *status_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8); status_bar_widget = status_bar;
   GtkStyleContext *status_style = gtk_widget_get_style_context(status_bar);
   gtk_style_context_add_class(status_style, GTK_STYLE_CLASS_STATUSBAR);
   gtk_widget_set_margin_start(status_bar, 8);
@@ -186,6 +218,7 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
   status_label = gtk_label_new("Starting…");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   gtk_label_set_ellipsize(GTK_LABEL(status_label), PANGO_ELLIPSIZE_MIDDLE);
+  gtk_label_set_max_width_chars(GTK_LABEL(status_label), 8);
   gtk_box_pack_start(GTK_BOX(status_bar), status_label, TRUE, TRUE, 0);
   volume_slider = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
   gtk_scale_set_draw_value(GTK_SCALE(volume_slider), FALSE);
@@ -226,7 +259,21 @@ void swanium_linux_menu_state_slots(const char **labels, const int *available) {
 void swanium_linux_menu_recent(const char **paths) { GList *children = gtk_container_get_children(GTK_CONTAINER(recent_menu)); for (GList *item = children; item; item = item->next) gtk_widget_destroy(GTK_WIDGET(item->data)); g_list_free(children); for (int i = 0; i < 10; i++) { g_free(recent_paths[i]); recent_paths[i] = NULL; } int count = 0; for (; paths && paths[count] && count < 10; count++) { recent_paths[count] = g_strdup(paths[count]); char *name = g_path_get_basename(paths[count]); menu_item(recent_menu, name, RECENT_BASE + count); g_free(name); } if (!count) { GtkWidget *empty = gtk_menu_item_new_with_label("No Recent ROMs"); gtk_widget_set_sensitive(empty, FALSE); gtk_menu_shell_append(GTK_MENU_SHELL(recent_menu), empty); } else menu_item(recent_menu, "Clear History", CLEAR_RECENT); gtk_widget_show_all(recent_menu); }
 const char *swanium_linux_menu_recent_path(int index) { return index >= 0 && index < 10 ? recent_paths[index] : NULL; }
 void swanium_linux_menu_resize_game(int width, int height, int scale) { frame_width = MAX(1, width); frame_height = MAX(1, height); display_scale = CLAMP(scale, 1, 4); resize_for_frame(); }
-void swanium_linux_menu_fullscreen(int enabled) { if (enabled) gtk_window_fullscreen(GTK_WINDOW(window)); else gtk_window_unfullscreen(GTK_WINDOW(window)); }
+int swanium_linux_menu_game_width(void) { return game_area ? gtk_widget_get_allocated_width(game_area) : 0; }
+int swanium_linux_menu_game_height(void) { return game_area ? gtk_widget_get_allocated_height(game_area) : 0; }
+int swanium_linux_menu_game_scale_factor(void) { return game_area ? gtk_widget_get_scale_factor(game_area) : 1; }
+int swanium_linux_menu_window_resizable(void) { return window ? gtk_window_get_resizable(GTK_WINDOW(window)) : 0; }
+int swanium_linux_menu_menu_min_width(void) { int minimum = 0, natural = 0; if (menu_bar_widget) gtk_widget_get_preferred_width(menu_bar_widget, &minimum, &natural); return minimum; }
+int swanium_linux_menu_status_min_width(void) { int minimum = 0, natural = 0; if (status_bar_widget) gtk_widget_get_preferred_width(status_bar_widget, &minimum, &natural); return minimum; }
+void swanium_linux_menu_fullscreen(int enabled) {
+  fullscreen_enabled = enabled != 0;
+  if (fullscreen_enabled) {
+    gtk_window_fullscreen(GTK_WINDOW(window));
+  } else {
+    gtk_window_unfullscreen(GTK_WINDOW(window));
+    resize_for_frame();
+  }
+}
 void swanium_linux_menu_state(int paused, int scale, int fullscreen, int renderer) { syncing_menu = TRUE; gtk_menu_item_set_label(GTK_MENU_ITEM(pause_item), paused ? "Resume" : "Pause"); gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(scale_items[CLAMP(scale, 1, 4) - 1]), TRUE); gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(fullscreen_item), fullscreen != 0); gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(renderer_items[CLAMP(renderer, 0, 1)]), TRUE); syncing_menu = FALSE; }
 int swanium_linux_menu_volume(void) { return volume_slider ? (int)gtk_range_get_value(GTK_RANGE(volume_slider)) : 100; }
 int swanium_linux_menu_key_state(int scancode) { return scancode >= 0 && scancode < SDL_NUM_SCANCODES ? key_state[scancode] : 0; }

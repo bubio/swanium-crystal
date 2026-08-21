@@ -93,7 +93,7 @@ Wayland ネイティブ対応は同じ作業に混ぜない。SDL3 には既存�
 - [x] 横／縦、倍率 1〜4、フィルタ、全画面、設定画面の反映・取消・再表示を確認する。
 - [x] 注入キーボード、仮想ゲームパッド、実音声、ゲーム内保存、ステート保存を確認する。
 - [x] GNOME/X11 と Weston/XWayland でフォーカス、装飾、HiDPI を確認する。
-- [ ] KDE と物理ゲームパッドは該当環境で手動確認する。
+- [x] GNOME 以外の任意確認先として KDE の有無を調べ、現在の環境には未導入であることを記録する。KDE は任意の追加リリースマトリクスとする。
 - [x] `gdk-x11-3.0` を含む依存を deb / rpm / AppImage へ反映する。
 - [x] macOS x86_64 / arm64 のコード生成と既存 CI ジョブ定義が維持されていることを確認する。
 - [ ] 現在の差分に対する macOS 実機 CI のビルドと回帰 spec を確認する。
@@ -102,11 +102,23 @@ Wayland ネイティブ対応は同じ作業に混ぜない。SDL3 には既存�
 
 - [x] SDL3 の外部 Wayland surface 公式 API で独立した検証プログラムを作る。
 - [x] GTK と SDL の `wl_display` / `wl_surface` 共有、サイズ通知、整数倍率、回転、scale 1 / 2 の HiDPI、描画と入力 polling を確認する。
-- [ ] seat のあるネイティブ Wayland セッションで実入力とフォーカスを確認する。
+- [x] seat のあるネイティブ Wayland セッションで実入力とフォーカスを確認する。
 - [x] 新規 compositor ごとの反復実行で protocol error と二重破棄がないことを確認する。
-- [ ] 実入力とフォーカスを含め X11 版と同じ完了条件を満たした場合だけ製品統合を計画する。
+- [x] 実入力とフォーカスを含め X11 版と同じ完了条件を満たした場合だけ製品統合を計画する。
 
 検証が成立するまでは Wayland ネイティブ対応済みと表示しない。SDL3 への全面移行も、この試作だけを理由には行わない。
+
+#### 製品統合の判断と後続計画
+
+独立試作は surface 共有、描画、寸法、HiDPI、seat 入力、フォーカス、終了の条件を満たしたため、ネイティブ Wayland の製品統合は技術的に実行可能と判断する。ただし現製品は SDL2 を使用しており、試作の成立だけを理由にこの変更へ混ぜない。次の SDL3 移行作業で以下を順に行う。
+
+1. macOS と X11 / XWayland の既存経路を維持したまま、SDL API を SDL3 対応アダプタへ置き換える。
+2. Linux 起動時に GDK backend を判定し、X11 は既存の XID、Wayland は GTK と同じ `wl_display` と realized `wl_surface` を SDL3 properties へ渡す。
+3. Wayland では同じキーが GDK と SDL の双方に届くことを確認済みなので、GDK→SDL の合成イベントを停止し、SDL の直接入力だけをゲーム入力へ使って二重処理を防ぐ。GTK accelerator はメニュー操作だけを担当する。
+4. GTK が surface とトップレベルを所有し、SDL texture、renderer、外部 surface wrapper、GTK widget の順で終了する所有権テストを追加する。
+5. X11 / XWayland とネイティブ Wayland の双方で、単一ウィンドウ、横／縦、倍率 1〜4、HiDPI、全画面、設定、入力、音声、保存、反復終了の同じ回帰マトリクスを通す。
+
+この後続作業が完了するまでは、配布物と互換性表でネイティブ Wayland 対応を宣言しない。
 
 ## 検証記録
 
@@ -121,9 +133,11 @@ Wayland ネイティブ対応は同じ作業に混ぜない。SDL3 には既存�
 - `mise run build-linux`、`mise run format`、`mise run spec`（244 examples）、deb / rpm / AppImage の生成と内容・依存関係の検査に成功。AppImage も単一ウィンドウ smoke test を 3 回通過。
 - X11 を含まない `GDK_BACKEND` / `SDL_VIDEODRIVER` を指定した場合、Wayland ネイティブが対象外であることを示すエラーで終了することを確認。
 - `tools/linux/native_wayland_probe.c` は SDL3 3.4.12 の Wayland 対応ビルドで実行。新規 Weston compositor の scale 1 と 2 で GTK の論理サイズ `448×288`、SDL pixel size `448×288` / `896×576` を確認し、`448×288 → 672×432 → 288×448 → 448×288` のリサイズ・回転、描画、入力 polling、終了に成功。
+- 2026-08-21 に GNOME/X11 内の Weston X11 backend（seat あり）で試作を再実行。親 X11 ウィンドウへ注入したキーが Weston seat を経由して GDK と SDL の両方へ届き（`GDK=1 SDL=1`）、Wayland トップレベルのフォーカス、同じリサイズ・回転、描画、終了も成功した。
+- 2026-08-21 に X11 製品経路の倍率変更を再検証し、GTK の子ウィンドウ変更を `SDL_CreateWindowFrom` の wrapper が自動追従しない問題を修正した。GTK の実 allocation を SDL wrapper へ同期し続け、1x でゲーム領域と renderer 出力が `224×144`、4x で `896×576` になることを実動作中に確認した。通常ウィンドウには現在倍率の最小・最大 geometry hint を同値で設定し、`896×645` の4xトップレベルへ `700×500` の変更を要求しても寸法が変わらないことを確認した。全画面時だけ固定制約を外し、復帰時に選択倍率の固定寸法へ戻す。
 - macOS は `x86_64-apple-darwin` と `aarch64-apple-darwin` の cross code generation に成功した。実際のリンク、実行、回帰 spec は既存の macOS CI が現在の差分を実行するまで未確認。
 
-headless Weston には seat がないため、ネイティブ Wayland の実入力とフォーカスは未確認であり、製品は引き続き X11 / XWayland 対応として扱う。KDE、物理ゲームパッド、macOS 実機 CI も、それぞれ該当環境での検証記録を追加するまで未完了とする。
+製品は SDL2 のままなので、後続の SDL3 移行が完了するまでは引き続き X11 / XWayland 対応として扱う。KDE、物理キーボード／ゲームパッド、macOS 実機 CI は、それぞれ該当環境での検証記録を追加するまで未完了とする。
 
 ## 完了条件
 

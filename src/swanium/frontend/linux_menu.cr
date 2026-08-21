@@ -11,6 +11,12 @@ lib LibLinuxMenu
   fun recent_path = swanium_linux_menu_recent_path(index : Int32) : LibC::Char*
   fun state_slots = swanium_linux_menu_state_slots(labels : LibC::Char**, available : Int32*) : Nil
   fun resize_game = swanium_linux_menu_resize_game(width : Int32, height : Int32, scale : Int32) : Nil
+  fun game_width = swanium_linux_menu_game_width : Int32
+  fun game_height = swanium_linux_menu_game_height : Int32
+  fun game_scale_factor = swanium_linux_menu_game_scale_factor : Int32
+  fun window_resizable = swanium_linux_menu_window_resizable : Int32
+  fun menu_min_width = swanium_linux_menu_menu_min_width : Int32
+  fun status_min_width = swanium_linux_menu_status_min_width : Int32
   fun fullscreen = swanium_linux_menu_fullscreen(enabled : Int32) : Nil
   fun state = swanium_linux_menu_state(paused : Int32, scale : Int32, fullscreen : Int32, renderer : Int32) : Nil
   fun volume = swanium_linux_menu_volume : Int32
@@ -125,6 +131,22 @@ module Swanium::Frontend::LinuxMenu
 
   def self.resize_game(width : Int32, height : Int32, scale : Int32) : Nil
     LibLinuxMenu.resize_game(width, height, scale)
+  end
+
+  def self.game_size : Tuple(Int32, Int32)
+    {LibLinuxMenu.game_width, LibLinuxMenu.game_height}
+  end
+
+  def self.game_scale_factor : Int32
+    LibLinuxMenu.game_scale_factor
+  end
+
+  def self.window_resizable? : Bool
+    LibLinuxMenu.window_resizable != 0
+  end
+
+  def self.chrome_min_widths : Tuple(Int32, Int32)
+    {LibLinuxMenu.menu_min_width, LibLinuxMenu.status_min_width}
   end
 
   def self.fullscreen=(value : Bool) : Nil
