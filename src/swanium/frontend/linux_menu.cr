@@ -1,6 +1,6 @@
 @[Link("gtk-3")]
 lib LibLinuxMenu
-  fun build = swanium_linux_menu_build(title : LibC::Char*, volume : Int32, scale : Int32, width : Int32, height : Int32) : Void*
+  fun build = swanium_linux_menu_build(title : LibC::Char*, volume : Int32, scale : Int32, width : Int32, height : Int32, x : Int32, y : Int32) : Void*
   fun error_text = swanium_linux_menu_error_text : LibC::Char*
   fun present = swanium_linux_menu_present : Nil
   fun pump = swanium_linux_menu_pump : Nil
@@ -15,6 +15,7 @@ lib LibLinuxMenu
   fun game_height = swanium_linux_menu_game_height : Int32
   fun game_scale_factor = swanium_linux_menu_game_scale_factor : Int32
   fun window_resizable = swanium_linux_menu_window_resizable : Int32
+  fun window_position = swanium_linux_menu_window_position(x : Int32*, y : Int32*) : Nil
   fun menu_min_width = swanium_linux_menu_menu_min_width : Int32
   fun status_min_width = swanium_linux_menu_status_min_width : Int32
   fun fullscreen = swanium_linux_menu_fullscreen(enabled : Int32) : Nil
@@ -38,8 +39,8 @@ module Swanium::Frontend::LinuxMenu
   FULLSCREEN = 20; RENDER_NEAREST = 31; RENDER_LINEAR = 32; ABOUT = 41; SETTINGS = 42; QUIT            =  43
   SAVE_STATE_BASE = 100; LOAD_STATE_BASE = 200; RECENT_BASE = 300; CLEAR_RECENT = 310
 
-  def self.build(title : String, volume : Int32, scale : Int32, width : Int32, height : Int32) : Void*
-    LibLinuxMenu.build(title, volume, scale, width, height)
+  def self.build(title : String, volume : Int32, scale : Int32, width : Int32, height : Int32, x : Int32, y : Int32) : Void*
+    LibLinuxMenu.build(title, volume, scale, width, height, x, y)
   end
 
   def self.error_text : String
@@ -143,6 +144,13 @@ module Swanium::Frontend::LinuxMenu
 
   def self.window_resizable? : Bool
     LibLinuxMenu.window_resizable != 0
+  end
+
+  def self.window_position : Tuple(Int32, Int32)
+    x = 0
+    y = 0
+    LibLinuxMenu.window_position(pointerof(x), pointerof(y))
+    {x, y}
   end
 
   def self.chrome_min_widths : Tuple(Int32, Int32)

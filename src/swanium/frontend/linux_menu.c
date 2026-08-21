@@ -130,7 +130,7 @@ static gboolean clear_keys(GtkWidget *widget, GdkEventFocus *event, gpointer dat
   return FALSE;
 }
 
-void *swanium_linux_menu_build(const char *title, int volume, int initial_scale, int width, int height) {
+void *swanium_linux_menu_build(const char *title, int volume, int initial_scale, int width, int height, int x, int y) {
   if (window && game_area) {
     GdkWindow *native = gtk_widget_get_window(game_area);
     return native ? (void *)(uintptr_t)gdk_x11_window_get_xid(native) : NULL;
@@ -149,6 +149,10 @@ void *swanium_linux_menu_build(const char *title, int volume, int initial_scale,
   }
   window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+  if (SDL_WINDOWPOS_ISCENTERED(x) && SDL_WINDOWPOS_ISCENTERED(y))
+    gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+  else
+    gtk_window_move(GTK_WINDOW(window), x, y);
   G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   gtk_window_set_wmclass(GTK_WINDOW(window), "swanium-crystal", "Swanium-crystal");
   G_GNUC_END_IGNORE_DEPRECATIONS
@@ -263,6 +267,9 @@ int swanium_linux_menu_game_width(void) { return game_area ? gtk_widget_get_allo
 int swanium_linux_menu_game_height(void) { return game_area ? gtk_widget_get_allocated_height(game_area) : 0; }
 int swanium_linux_menu_game_scale_factor(void) { return game_area ? gtk_widget_get_scale_factor(game_area) : 1; }
 int swanium_linux_menu_window_resizable(void) { return window ? gtk_window_get_resizable(GTK_WINDOW(window)) : 0; }
+void swanium_linux_menu_window_position(int *x, int *y) {
+  if (window) gtk_window_get_position(GTK_WINDOW(window), x, y);
+}
 int swanium_linux_menu_menu_min_width(void) { int minimum = 0, natural = 0; if (menu_bar_widget) gtk_widget_get_preferred_width(menu_bar_widget, &minimum, &natural); return minimum; }
 int swanium_linux_menu_status_min_width(void) { int minimum = 0, natural = 0; if (status_bar_widget) gtk_widget_get_preferred_width(status_bar_widget, &minimum, &natural); return minimum; }
 void swanium_linux_menu_fullscreen(int enabled) {

@@ -30,8 +30,8 @@ module Swanium::Frontend
       @volume = Platform::StateStore.default.settings["volume"]?.try(&.to_i?).try(&.clamp(0, 100)) || 100
     end
 
-    def install_menus(width : Int32, height : Int32) : Void*
-      handle = LinuxMenu.build(@title, @volume, initial_scale, width, height)
+    def install_menus(width : Int32, height : Int32, x : Int32, y : Int32) : Void*
+      handle = LinuxMenu.build(@title, @volume, initial_scale, width, height, x, y)
       raise Platform::SdlError.new(LinuxMenu.error_text) if handle.null?
       LinuxMenu.recent = Platform::StateStore.default.recent_roms
       handle

@@ -251,7 +251,7 @@ module Swanium
                                           game_width : Int32, game_height : Int32, scale : Int32, flags : UInt32) : Void*
         window = Pointer(Void).null
         {% if flag?(:linux) %}
-          native_window = controls.install_menus(game_width, game_height)
+          native_window = controls.install_menus(game_width, game_height, x, y)
           window = LibSDL.create_window_from(native_window)
         {% else %}
           window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 22, flags)
@@ -976,7 +976,11 @@ module Swanium
       private def self.save_window_position(window : Void*) : Nil
         x = 0
         y = 0
-        LibSDL.get_window_position(window, pointerof(x), pointerof(y))
+        {% if flag?(:linux) %}
+          x, y = Frontend::LinuxMenu.window_position
+        {% else %}
+          LibSDL.get_window_position(window, pointerof(x), pointerof(y))
+        {% end %}
         StateStore.default.save_window_position(x, y)
       end
 
