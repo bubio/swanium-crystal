@@ -36,6 +36,39 @@ run = "sh tools/build_macos_app.sh 'bin/Swanium Crystal.app' release"
 description = "Build the optimized Linux executable"
 run = "sh tools/build_linux.sh bin/swanium-crystal"
 
+[tasks.linux-native-probe]
+description = "Verify SDL2 rendering inside a GTK3 X11 child window"
+run = "sh tools/run_linux_native_probe.sh"
+
+[tasks.linux-native-wayland-probe]
+description = "Experimentally verify SDL3 rendering into a GTK3 Wayland surface"
+run = "sh tools/run_linux_native_wayland_probe.sh"
+
+[tasks.linux-sdl-smoke]
+description = "Run the product GTK3 + SDL2 integration smoke test"
+depends = ["build-linux"]
+run = "sh tools/verify_linux_single_window.sh bin/swanium-crystal"
+
+[tasks.linux-video-smoke]
+description = "Run self-contained Linux video, input, and dummy-audio verification"
+depends = ["build-linux"]
+run = "SDL_AUDIODRIVER=dummy bin/swanium-crystal --video-smoke"
+
+[tasks.linux-rom-smoke]
+description = "Run generated horizontal and vertical ROMs through the complete Linux frontend"
+depends = ["build-linux"]
+run = "crystal run tools/run_linux_rom_smoke.cr -- bin/swanium-crystal"
+
+[tasks.linux-keyboard-smoke]
+description = "Inject an X11 key event and verify that SDL receives it"
+depends = ["build-linux"]
+run = "sh tools/verify_linux_keyboard.sh bin/swanium-crystal"
+
+[tasks.linux-launcher-smoke]
+description = "Verify the no-ROM launcher and window-manager close path"
+depends = ["build-linux"]
+run = "sh tools/verify_linux_launcher.sh bin/swanium-crystal"
+
 [tasks.package-linux-deb]
 description = "Create the Debian package"
 depends = ["build-linux"]

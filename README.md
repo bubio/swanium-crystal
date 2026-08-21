@@ -12,7 +12,9 @@ macOS 向けには `Swanium-Crystal-<version>-macos-arm64.zip` または
 | --- | --- | --- | --- | --- |
 | macOS | Apple Silicon / Intel | macOS 13.5 | `.app` | 対応済み |
 | Windows | — | — | — | 今後対応予定 |
-| Linux | x86_64 | GTK 3 対応ディストリビューション | `.deb` / `.rpm` / AppImage | 対応中 |
+| Linux | x86_64 | GTK 3 + SDL2（X11 / XWayland） | `.deb` / `.rpm` / AppImage | 対応済み |
+
+Linux 版は X11 セッション、または Wayland セッション上の XWayland を使用します。GTK3 がメインウィンドウ、メニュー、ステータス、設定画面を所有し、SDL2 は同じウィンドウ内のゲーム領域へ直接描画します。Wayland ネイティブバックエンドは未対応です。`GDK_BACKEND=wayland` や `SDL_VIDEODRIVER=wayland` を明示した環境では起動せず、X11 / XWayland を使用するよう案内します。
 
 > **注意**: このアプリは Apple によるノータリゼーション（公証）を受けていないため、初回起動時に Gatekeeper によってブロックされる場合があります。以下のいずれかの方法で回避できます：
 >

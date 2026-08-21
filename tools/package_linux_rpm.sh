@@ -7,7 +7,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=$(sed -n 's/^version: *//p' "$root/shard.yml" | head -n 1)
 top=$(mktemp -d)
 trap 'rm -rf "$top"' EXIT
-mkdir -p "$top/BUILD" "$top/RPMS" "$top/SOURCES" "$top/SPECS"
+mkdir -p "$top/BUILD" "$top/RPMS" "$top/SOURCES" "$top/SPECS" "$top/TMP" "$top/RPMDB"
 archive="$top/SOURCES/swanium-crystal-$version.tar.gz"
 stage=$(mktemp -d)
 mkdir -p "$stage/swanium-crystal-$version"
@@ -35,6 +35,10 @@ cp -a usr %{buildroot}/
 /usr/share/applications/swanium-crystal.desktop
 /usr/share/icons/hicolor/1024x1024/apps/swanium-crystal.png
 EOF
-rpmbuild -bb --define "_topdir $top" "$top/SPECS/swanium-crystal.spec"
+rpmbuild -bb \
+  --define "_topdir $top" \
+  --define "_tmppath $top/TMP" \
+  --define "_dbpath $top/RPMDB" \
+  "$top/SPECS/swanium-crystal.spec"
 mkdir -p "$(dirname "$output")"
 find "$top/RPMS" -name '*.rpm' -exec cp {} "$output" \;

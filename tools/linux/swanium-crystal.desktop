@@ -4,5 +4,6 @@ Name=Swanium Crystal
 Comment=WonderSwan emulator
 Exec=swanium-crystal
 Icon=swanium-crystal
+StartupWMClass=Swanium-crystal
 Categories=Game;Emulator;
 Terminal=false

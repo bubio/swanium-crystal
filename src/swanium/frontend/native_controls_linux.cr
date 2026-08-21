@@ -10,6 +10,14 @@ module Swanium::Frontend
     getter quit_requested : Bool
 
     def self.start(title : String) : NativeControls
+      if backend = ENV["GDK_BACKEND"]?
+        raise Platform::SdlError.new("Linux native Wayland is not supported; use the GTK3 X11 backend through X11 or XWayland") unless backend.split(',').includes?("x11")
+      end
+      if driver = ENV["SDL_VIDEODRIVER"]?
+        raise Platform::SdlError.new("Linux native Wayland is not supported; use the SDL2 x11 video driver through X11 or XWayland") unless driver.split(',').includes?("x11")
+      end
+      ENV["GDK_BACKEND"] = "x11"
+      ENV["SDL_VIDEODRIVER"] = "x11"
       new(title)
     end
 
@@ -18,12 +26,15 @@ module Swanium::Frontend
       @open_rom_path = nil.as(String?); @save_state_requested = nil.as(Int32?); @load_state_requested = nil.as(Int32?)
       @scale_requested = nil.as(Int32?); @fullscreen_requested = false; @renderer_requested = nil.as(Int32?)
       @keyboard_capture = nil.as(Int32?); @controller_capture = nil.as(Int32?)
+      @settings_snapshot = nil.as(Hash(String, String)?)
       @volume = Platform::StateStore.default.settings["volume"]?.try(&.to_i?).try(&.clamp(0, 100)) || 100
     end
 
-    def install_menus : Nil
-      LinuxMenu.build(@title, @volume, initial_scale)
+    def install_menus(width : Int32, height : Int32) : Void*
+      handle = LinuxMenu.build(@title, @volume, initial_scale, width, height)
+      raise Platform::SdlError.new(LinuxMenu.error_text) if handle.null?
       LinuxMenu.recent = Platform::StateStore.default.recent_roms
+      handle
     end
 
     def pump : Nil
@@ -41,21 +52,27 @@ module Swanium::Frontend
       when LinuxMenu::LOAD_STATE_BASE..(LinuxMenu::LOAD_STATE_BASE + 9) then @load_state_requested = action - LinuxMenu::LOAD_STATE_BASE
       when LinuxMenu::SCALE_1..LinuxMenu::SCALE_4
         @scale_requested = action - LinuxMenu::SCALE_1 + 1
-        LinuxMenu.scale = @scale_requested.not_nil!
       when LinuxMenu::FULLSCREEN     then @fullscreen_requested = true
       when LinuxMenu::RENDER_NEAREST then @renderer_requested = 0
       when LinuxMenu::RENDER_LINEAR  then @renderer_requested = 1
       when LinuxMenu::ABOUT          then LinuxMenu.about
-      when LinuxMenu::SETTINGS       then LinuxMenu.settings; sync_settings
-      when 400..410                  then @keyboard_capture = action - 400
-      when 500..502                  then @controller_capture = action - 500
-      when 420                       then InputBindings.default.reset_keyboard; @keyboard_capture = nil; sync_settings
-      when 520                       then InputBindings.default.reset_controller; @controller_capture = nil; sync_settings
+      when LinuxMenu::SETTINGS
+        @settings_snapshot = Platform::StateStore.default.settings.dup
+        LinuxMenu.settings
+        sync_settings
+      when 400..410 then @keyboard_capture = action - 400
+      when 500..502 then @controller_capture = action - 500
+      when 420      then InputBindings.default.reset_keyboard; @keyboard_capture = nil; sync_settings
+      when 520      then InputBindings.default.reset_controller; @controller_capture = nil; sync_settings
+      when 530      then @settings_snapshot = nil
+      when 531      then restore_settings_snapshot
       when 6000..6022
         source = action // 10 - 600; destination = action % 10
         key = ["dpad", "left_stick", "right_stick"][source]?
         InputBindings.default.set_controller_destination(key, destination) if key && destination.in?(0..2)
         sync_settings
+      when 7000..7999
+        capture_keyboard(action - 7000)
       end
     end
 
@@ -103,7 +120,9 @@ module Swanium::Frontend
       LinuxMenu.status = "#{title} — #{paused ? "paused" : "#{fps.round.to_i} fps"}"
     end
 
-    def update_menu_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil; end
+    def update_menu_state(paused : Bool, scale : Int32, fullscreen : Bool, renderer : Int32) : Nil
+      LinuxMenu.state(paused, scale, fullscreen, renderer)
+    end
 
     def update_state_slots(rom_id : String) : Nil
       store = Platform::StateStore.default
@@ -142,6 +161,10 @@ module Swanium::Frontend
       0
     end
 
+    def resize_game(width : Int32, height : Int32, scale : Int32) : Nil
+      LinuxMenu.resize_game(width, height, scale)
+    end
+
     def close : Nil
       LinuxMenu.destroy
     end
@@ -152,6 +175,21 @@ module Swanium::Frontend
       buttons = [:a, :b, :start].map { |action| InputBindings.controller_button_name(bindings.controller_button(action)) }
       directions = [bindings.controller_destination("dpad", 1), bindings.controller_destination("left_stick", 1), bindings.controller_destination("right_stick", 2)]
       LinuxMenu.settings_sync(keyboard, buttons, directions)
+    end
+
+    private def restore_settings_snapshot : Nil
+      return unless snapshot = @settings_snapshot
+      store = Platform::StateStore.default
+      store.save_settings(snapshot)
+      bindings = InputBindings.default
+      InputBindings::ACTIONS.each do |input_action|
+        value = snapshot["binding.#{input_action}"]?.try(&.to_i?) || InputBindings::DEFAULTS[input_action]
+        bindings.set(input_action, value)
+      end
+      store.save_settings(snapshot)
+      @keyboard_capture = nil
+      @controller_capture = nil
+      @settings_snapshot = nil
     end
   end
 end

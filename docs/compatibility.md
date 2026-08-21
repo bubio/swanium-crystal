@@ -1,6 +1,6 @@
 # 互換性
 
-最初の動作保証対象は macOS である。Linux、Windows、その他のプラットフォームは、macOS の市販ゲーム互換性が安定してから検証・配布対象に加える。
+動作保証対象は macOS と Linux である。Linux は GTK3 と SDL2 を使う X11 セッション、および Wayland セッション上の XWayland を対象とし、Wayland ネイティブはまだ対象外である。Windows とその他のプラットフォームは、macOS と Linux の市販ゲーム互換性が安定してから検証・配布対象に加える。
 
 ## 記録方針
 

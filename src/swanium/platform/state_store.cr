@@ -36,15 +36,18 @@ module Swanium
         source = settings_path
         return Hash(String, String).new unless File.exists?(source)
         File.read_lines(source).each_with_object(Hash(String, String).new) do |line, result|
-          key, value = line.split('=', 2)
-          result[key] = value if value
+          parts = line.split('=', 2)
+          next unless parts.size == 2 && !parts[0].empty?
+          result[parts[0]] = parts[1]
         end
       end
 
       def save_settings(values : Hash(String, String)) : Nil
         destination = settings_path
         Dir.mkdir_p(destination.parent)
-        File.write(destination, values.keys.sort.map { |key| "#{key}=#{values[key]}" }.join('\n') + '\n')
+        contents = values.keys.sort.map { |key| "#{key}=#{values[key]}" }.join('\n')
+        contents += '\n' unless contents.empty?
+        File.write(destination, contents)
       end
 
       # Window placement belongs with the other user preferences, rather than

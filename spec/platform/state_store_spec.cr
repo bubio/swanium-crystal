@@ -100,6 +100,24 @@ describe Swanium::Platform::StateStore do
     end
   end
 
+  it "round-trips empty settings and ignores malformed lines" do
+    root = Path["/tmp/swanium-empty-settings-spec"]
+    begin
+      store = Swanium::Platform::StateStore.new(root)
+      store.save_settings({} of String => String)
+
+      File.read(store.settings_path).should be_empty
+      store.settings.should be_empty
+
+      File.write(store.settings_path, "\nmalformed\nvolume=42\n")
+      store.settings.should eq({"volume" => "42"})
+    ensure
+      File.delete(root / "swanium-crystal" / "settings.txt") if File.exists?(root / "swanium-crystal" / "settings.txt")
+      Dir.delete(root / "swanium-crystal") if Dir.exists?(root / "swanium-crystal")
+      Dir.delete(root) if Dir.exists?(root)
+    end
+  end
+
   it "persists complete window positions and ignores incomplete values" do
     root = Path["/tmp/swanium-window-position-spec"]
     begin

@@ -1,5 +1,7 @@
 /.shards/
 /lib/
 /bin/swanium
+/bin/linux-native-window-probe
+/bin/linux-native-wayland-probe
 /dist/
 /.mise.local.toml

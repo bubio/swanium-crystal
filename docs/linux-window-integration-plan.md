@@ -46,62 +46,84 @@ Wayland ネイティブ対応は同じ作業に混ぜない。SDL3 には既存�
 
 ### 0. SDL 公式パターンの最小検証
 
-- [ ] `tools/linux/` に GTK3 の `GtkWindow` と `GtkDrawingArea` だけを持つ検証プログラムを置く。
-- [ ] realize 後の X11 Window ID を `SDL_CreateWindowFrom` に渡し、SDL renderer と texture でテスト画像を表示する。
-- [ ] 起動、リサイズ、終了を繰り返し、二つ目のトップレベル、クラッシュ、X11 エラーがないことを確認する。
-- [ ] renderer driver と失敗時の `SDL_GetError` を記録する。
+- [x] `tools/linux/` に GTK3 の `GtkWindow` と `GtkDrawingArea` だけを持つ検証プログラムを置く。
+- [x] realize 後の X11 Window ID を `SDL_CreateWindowFrom` に渡し、SDL renderer と texture でテスト画像を表示する。
+- [x] 起動、リサイズ、終了を繰り返し、二つ目のトップレベル、クラッシュ、X11 エラーがないことを確認する。
+- [x] renderer driver と失敗時の `SDL_GetError` を記録する。
 
 この検証が通るまでは製品コードを切り替えない。失敗しても、別ウィンドウを隠す回避策には進まない。
 
 ### 1. 製品コードへの統合
 
-- [ ] Linux ネイティブアダプタに、ゲーム領域の作成、realize、X11 Window ID の取得、破棄を閉じ込める。
-- [ ] Linux の SDL 初期化を通常の `SDL_CreateWindow` から `SDL_CreateWindowFrom` へ切り替える。
-- [ ] 既存の renderer、texture、入力、音声をラップしたウィンドウへ接続する。
-- [ ] GTK/Cairo の RGBA 描画経路と非表示の補助 SDL ウィンドウを削除する。
-- [ ] 初期化失敗時も、作成済みリソースを所有権の逆順で解放する。
-- [ ] X11 バックエンドを利用できない場合は、原因と対応範囲を明示して終了する。
+- [x] Linux ネイティブアダプタに、ゲーム領域の作成、realize、X11 Window ID の取得、破棄を閉じ込める。
+- [x] Linux の SDL 初期化を通常の `SDL_CreateWindow` から `SDL_CreateWindowFrom` へ切り替える。
+- [x] 既存の renderer、texture、入力、音声をラップしたウィンドウへ接続する。
+- [x] GTK/Cairo の RGBA 描画経路と非表示の補助 SDL ウィンドウを削除する。
+- [x] 初期化失敗時も、作成済みリソースを所有権の逆順で解放する。
+- [x] X11 バックエンドを利用できない場合は、原因と対応範囲を明示して終了する。
 
 ### 2. 寸法、回転、全画面表示
 
-- [ ] 横向き `224×144`、縦向き `144×224` に整数倍率を掛けた値をゲーム領域の要求サイズにする。
-- [ ] メニューとステータス行の高さは GTK に計測させ、ゲーム領域の寸法へ混ぜない。
-- [ ] 回転時はトップレベルを作り直さず、ゲーム領域の要求サイズと SDL 出力だけを更新する。
-- [ ] nearest / bilinear は SDL の描画設定に一本化する。
-- [ ] 全画面から戻った後も倍率と向きを保持する。
-- [ ] HiDPI では GTK の論理サイズと SDL renderer の実出力を取得し、倍率を推測しない。
+- [x] 横向き `224×144`、縦向き `144×224` に整数倍率を掛けた値をゲーム領域の要求サイズにする。
+- [x] メニューとステータス行の高さは GTK に計測させ、ゲーム領域の寸法へ混ぜない。
+- [x] 回転時はトップレベルを作り直さず、ゲーム領域の要求サイズと SDL 出力だけを更新する。
+- [x] nearest / bilinear は SDL の描画設定に一本化する。
+- [x] 全画面から戻った後も倍率と向きを保持する。
+- [x] HiDPI では GTK の論理サイズと SDL renderer の実出力を取得し、倍率を推測しない。
 
 ### 3. イベントと入力
 
-- [ ] GTK のイベント処理と `SDL_PollEvent` を同じメインスレッドで進め、処理順序を固定する。
-- [ ] 通常はゲーム領域がフォーカスを持ち、設定画面を閉じたらフォーカスを戻す。
-- [ ] キーボード、ゲームパッド hot-plug、終了、全画面切替を確認する。
-- [ ] GTK のショートカットとゲーム入力が二重処理されないよう責務を定義する。
+- [x] GTK のイベント処理と `SDL_PollEvent` を同じメインスレッドで進め、処理順序を固定する。
+- [x] 通常はゲーム領域がフォーカスを持ち、設定画面を閉じたらフォーカスを戻す。
+- [x] X11 キー注入、SDL 仮想ゲームパッドの hot-plug とボタン読み取り、WM close、全画面切替を自動検証する。
+- [ ] 物理キーボードと物理ゲームパッドでも実機操作を確認する。
+- [x] GTK のショートカットとゲーム入力が二重処理されないよう責務を定義する。
 
 ### 4. Linux UI の整合
 
-- [ ] メニュー項目、チェック状態、無効状態、ショートカットを macOS 版と同じ機能構成にする。
-- [ ] ステータスは一行に収め、向きや倍率で不要な余白を作らない。
-- [ ] 設定画面は GTK 標準の余白、行間、ラベル整列、ボタン配置を使い、固定座標を使わない。
-- [ ] 設定の反映、キャンセル、再表示時の復元を確認する。
-- [ ] Linux の外観は GTK テーマに従わせ、macOS の見た目をピクセル単位では模倣しない。
+- [x] メニュー項目、チェック状態、無効状態、ショートカットを macOS 版と同じ機能構成にする。
+- [x] ステータスは一行に収め、向きや倍率で不要な余白を作らない。
+- [x] 設定画面は GTK 標準の余白、行間、ラベル整列、ボタン配置を使い、固定座標を使わない。
+- [x] 設定の反映、キャンセル、再表示時の復元を確認する。
+- [x] Linux の外観は GTK テーマに従わせ、macOS の見た目をピクセル単位では模倣しない。
 
 ### 5. X11 / XWayland の検証と配布
 
-- [ ] Ubuntu LTS の X11 と Wayland セッション上の XWayland で、起動、ROM 読み込み、終了を確認する。
-- [ ] 横／縦、倍率 1〜4、フィルタ、全画面、設定画面の組合せを確認する。
-- [ ] キーボード、ゲームパッド、音声、ゲーム内保存、ステート保存を確認する。
-- [ ] GNOME と、可能なら KDE でフォーカス、装飾、HiDPI の差を確認する。
-- [ ] `gdk-x11-3.0` を含む依存を deb / rpm / AppImage へ反映する。
-- [ ] macOS の既存ビルドと回帰 spec が無変更で通ることを確認する。
+- [x] Ubuntu LTS の GNOME/X11 と Weston 上の XWayland で、起動、ROM 読み込み、終了を確認する。
+- [x] 横／縦、倍率 1〜4、フィルタ、全画面、設定画面の反映・取消・再表示を確認する。
+- [x] 注入キーボード、仮想ゲームパッド、実音声、ゲーム内保存、ステート保存を確認する。
+- [x] GNOME/X11 と Weston/XWayland でフォーカス、装飾、HiDPI を確認する。
+- [ ] KDE と物理ゲームパッドは該当環境で手動確認する。
+- [x] `gdk-x11-3.0` を含む依存を deb / rpm / AppImage へ反映する。
+- [x] macOS x86_64 / arm64 のコード生成と既存 CI ジョブ定義が維持されていることを確認する。
+- [ ] 現在の差分に対する macOS 実機 CI のビルドと回帰 spec を確認する。
 
 ### 6. Wayland ネイティブ対応の判断
 
-- [ ] SDL3 の外部 Wayland surface 公式 API で独立した検証プログラムを作る。
-- [ ] GTK と SDL の `wl_display` 共有、サイズ通知、整数倍率、回転、HiDPI、入力を確認する。
-- [ ] protocol error、二重破棄、フォーカス不整合がなく、X11 版と同じ完了条件を満たす場合だけ製品統合を計画する。
+- [x] SDL3 の外部 Wayland surface 公式 API で独立した検証プログラムを作る。
+- [x] GTK と SDL の `wl_display` / `wl_surface` 共有、サイズ通知、整数倍率、回転、scale 1 / 2 の HiDPI、描画と入力 polling を確認する。
+- [ ] seat のあるネイティブ Wayland セッションで実入力とフォーカスを確認する。
+- [x] 新規 compositor ごとの反復実行で protocol error と二重破棄がないことを確認する。
+- [ ] 実入力とフォーカスを含め X11 版と同じ完了条件を満たした場合だけ製品統合を計画する。
 
 検証が成立するまでは Wayland ネイティブ対応済みと表示しない。SDL3 への全面移行も、この試作だけを理由には行わない。
+
+## 検証記録
+
+2026-08-18 に Ubuntu 24.04.4 LTS / GNOME / X11、および headless Weston 上の rootful XWayland で以下を確認した。
+
+- `mise run linux-native-probe`: OpenGL renderer (`flags=0xa`) で GTK3 の X11 子ウィンドウへの描画、拡大・縮小、終了に成功。
+- `mise run linux-sdl-smoke`: 製品経路で横・縦、倍率 1〜4、nearest / bilinear、全画面、設定の Cancel / Apply / 再表示、SDL 仮想ゲームパッドの追加・削除とボタン press / release を行い、3 回連続で GTK のアプリケーションウィンドウが一つだけであることを X11 のウィンドウツリーから確認。GTK がフォーカスを所有する構成でもゲームパッド状態を更新できるよう、SDL の background controller polling を有効にした。
+- `mise run linux-video-smoke`: SDL renderer、ストリーミング texture、入力 polling、dummy audio queue を使う自己完結した 30 フレーム実行に成功。
+- `mise run linux-rom-smoke`: 横向き `.ws` と縦向き `.wsc` を実行し、PipeWire 上の PulseAudio 実デバイス、ステート保存後の SRAM 復元、8 KiB の cartridge save と検証マーカーを確認。
+- `mise run linux-keyboard-smoke`: X11/XWayland のフォーカス済みゲーム領域へキーを注入し、GTK から SDL の `KEYDOWN` へ一度だけ届くことを確認。
+- `mise run linux-launcher-smoke`: ICCCM `WM_DELETE_WINDOW` を送信し、ランチャーを 3 回連続で正常終了。`xdotool windowclose` のような X window の直接破棄は検証に使わない。
+- `mise run build-linux`、`mise run format`、`mise run spec`（244 examples）、deb / rpm / AppImage の生成と内容・依存関係の検査に成功。AppImage も単一ウィンドウ smoke test を 3 回通過。
+- X11 を含まない `GDK_BACKEND` / `SDL_VIDEODRIVER` を指定した場合、Wayland ネイティブが対象外であることを示すエラーで終了することを確認。
+- `tools/linux/native_wayland_probe.c` は SDL3 3.4.12 の Wayland 対応ビルドで実行。新規 Weston compositor の scale 1 と 2 で GTK の論理サイズ `448×288`、SDL pixel size `448×288` / `896×576` を確認し、`448×288 → 672×432 → 288×448 → 448×288` のリサイズ・回転、描画、入力 polling、終了に成功。
+- macOS は `x86_64-apple-darwin` と `aarch64-apple-darwin` の cross code generation に成功した。実際のリンク、実行、回帰 spec は既存の macOS CI が現在の差分を実行するまで未確認。
+
+headless Weston には seat がないため、ネイティブ Wayland の実入力とフォーカスは未確認であり、製品は引き続き X11 / XWayland 対応として扱う。KDE、物理ゲームパッド、macOS 実機 CI も、それぞれ該当環境での検証記録を追加するまで未完了とする。
 
 ## 完了条件
 
