@@ -20,8 +20,9 @@ mise run build-windows
 mise run package-windows
 ```
 
-The ZIP contains the executable, SDL2 runtime, README, and license. User state
-is stored below `%LOCALAPPDATA%\swanium-crystal`.
+Crystal's runtime dependencies and the Visual C++ runtime are statically linked.
+The ZIP contains only the executable, `SDL2.dll`, README, and license. User
+state is stored below `%LOCALAPPDATA%\swanium-crystal`.
 
 ## ARM64 status
 

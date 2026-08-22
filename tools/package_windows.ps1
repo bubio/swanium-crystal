@@ -11,7 +11,7 @@ $staging = Join-Path $env:TEMP ("swanium-crystal-" + [Guid]::NewGuid().ToString(
 try {
   New-Item -ItemType Directory -Force $staging | Out-Null
   Copy-Item $executablePath $staging
-  Get-ChildItem $sourceDirectory -Filter "*.dll" | Copy-Item -Destination $staging
+  Copy-Item (Join-Path $sourceDirectory "SDL2.dll") $staging
   Copy-Item (Join-Path $root "README.md") $staging
   Copy-Item (Join-Path $root "LICENSE") $staging
   New-Item -ItemType Directory -Force (Split-Path -Parent $outputPath) | Out-Null

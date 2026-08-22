@@ -45,21 +45,16 @@ if (-not $compiler -and $env:VCToolsInstallDir) {
   $compiler = Join-Path $env:VCToolsInstallDir "bin\Hostx64\x64\cl.exe"
 }
 if (-not $compiler -or -not (Test-Path $compiler)) { throw "cl.exe was not found after initializing the Visual Studio environment" }
-& $compiler /nologo /W4 /WX /utf-8 /MD /I$include /c (Join-Path $root "src\swanium\frontend\windows_menu.c") /Fo$object
+& $compiler /nologo /W4 /WX /utf-8 /MT /I$include /c (Join-Path $root "src\swanium\frontend\windows_menu.c") /Fo$object
 if ($LASTEXITCODE -ne 0) { throw "Compiling the Win32 frontend failed" }
 
 $flags = @()
 if ($Configuration -eq "release") { $flags += @("--release", "--no-debug") }
+$flags += "--static"
 $linkFlags = '"{0}" /LIBPATH:"{1}" SDL2.lib user32.lib gdi32.lib comdlg32.lib shell32.lib comctl32.lib' -f $object, $library
 & $Crystal build @flags --link-flags $linkFlags (Join-Path $root "src\swanium.cr") -o $outputPath
 if ($LASTEXITCODE -ne 0) { throw "Building Swanium Crystal failed" }
 
+Get-ChildItem $outputDirectory -Filter "*.dll" | Remove-Item -Force
 Copy-Item $dll (Join-Path $outputDirectory "SDL2.dll") -Force
-$vcRuntime = if ($arch -eq "arm64") { "arm64" } else { "x64" }
-if ($env:VCToolsRedistDir) {
-  $runtimeDirectory = Get-ChildItem (Join-Path $env:VCToolsRedistDir "$vcRuntime\Microsoft.VC*.CRT") -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($runtimeDirectory) {
-    Get-ChildItem $runtimeDirectory.FullName -Filter "*.dll" | Copy-Item -Destination $outputDirectory -Force
-  }
-}
 Write-Output "Built $outputPath ($arch)"
