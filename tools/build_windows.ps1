@@ -35,6 +35,9 @@ $outputPath = Join-Path $root $Output
 $outputDirectory = Split-Path -Parent $outputPath
 New-Item -ItemType Directory -Force $outputDirectory | Out-Null
 $object = Join-Path $outputDirectory "windows_menu.obj"
+$icon = Join-Path $outputDirectory "AppIcon.ico"
+$resourceScript = Join-Path $outputDirectory "AppIcon.rc"
+$resource = Join-Path $outputDirectory "AppIcon.res"
 if (-not $env:CRYSTAL_CACHE_DIR) {
   $env:CRYSTAL_CACHE_DIR = Join-Path $outputDirectory ".crystal-cache"
 }
@@ -48,10 +51,18 @@ if (-not $compiler -or -not (Test-Path $compiler)) { throw "cl.exe was not found
 & $compiler /nologo /W4 /WX /utf-8 /MT /I$include /c (Join-Path $root "src\swanium\frontend\windows_menu.c") /Fo$object
 if ($LASTEXITCODE -ne 0) { throw "Compiling the Win32 frontend failed" }
 
+& (Join-Path $root "tools\build_windows_icon.ps1") -Source (Join-Path $root "assets\macos\AppIcon.png") -Output $icon
+$escapedIcon = $icon.Replace('\', '/').Replace('"', '""')
+[IO.File]::WriteAllText($resourceScript, "1 ICON `"$escapedIcon`"`r`n", [Text.UTF8Encoding]::new($false))
+$resourceCompiler = (Get-Command rc.exe -ErrorAction SilentlyContinue).Source
+if (-not $resourceCompiler) { throw "rc.exe was not found after initializing the Visual Studio environment" }
+& $resourceCompiler /nologo /fo $resource $resourceScript
+if ($LASTEXITCODE -ne 0) { throw "Compiling the Windows icon resource failed" }
+
 $flags = @()
 if ($Configuration -eq "release") { $flags += @("--release", "--no-debug") }
 $flags += "--static"
-$linkFlags = '"{0}" /LIBPATH:"{1}" SDL2.lib user32.lib gdi32.lib comdlg32.lib shell32.lib comctl32.lib' -f $object, $library
+$linkFlags = '"{0}" "{1}" /LIBPATH:"{2}" SDL2.lib user32.lib gdi32.lib comdlg32.lib shell32.lib comctl32.lib' -f $object, $resource, $library
 & $Crystal build @flags --link-flags $linkFlags (Join-Path $root "src\swanium.cr") -o $outputPath
 if ($LASTEXITCODE -ne 0) { throw "Building Swanium Crystal failed" }
 

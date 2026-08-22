@@ -11,3 +11,7 @@
 /bin/*.dll
 /bin/*.exe
 /bin/*.obj
+/bin/*.ico
+/bin/*.rc
+/bin/*.res
+/bin/*.pdb

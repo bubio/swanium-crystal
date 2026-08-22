@@ -32,6 +32,8 @@ static int native_keyboard_capture = -1;
 static int last_paused = -1, last_scale = -1, last_fullscreen = -1, last_renderer = -1;
 static char last_status_title[512], last_status_fps[64];
 
+#define SWANIUM_APP_ICON 1
+
 void swanium_windows_menu_state(int paused, int scale, int fullscreen, int renderer);
 
 static wchar_t *utf8_to_wide(const char *value) {
@@ -215,6 +217,12 @@ int swanium_windows_menu_attach(const char *title, int volume, int scale) {
   window_handle = GetActiveWindow();
   if (!window_handle) window_handle = GetForegroundWindow();
   if (!window_handle) return 0;
+  HICON large_icon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(SWANIUM_APP_ICON),
+                                       IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+  HICON small_icon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(SWANIUM_APP_ICON),
+                                       IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+  if (large_icon) SendMessageW(window_handle, WM_SETICON, ICON_BIG, (LPARAM)large_icon);
+  if (small_icon) SendMessageW(window_handle, WM_SETICON, ICON_SMALL, (LPARAM)small_icon);
   current_volume = volume < 0 ? 0 : volume > 100 ? 100 : volume;
   INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_BAR_CLASSES | ICC_TAB_CLASSES};
   InitCommonControlsEx(&controls);
