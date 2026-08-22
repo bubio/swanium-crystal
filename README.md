@@ -14,7 +14,7 @@ Windows 向けには `Swanium-Crystal-<version>-windows-x86_64.zip` を展開し
 | --- | --- | --- | --- | --- |
 | macOS | Apple Silicon / Intel | macOS 13.5 | `.app` | 対応済み |
 | Windows | x86_64 | Windows 10 / 11 | `.zip` | 対応済み |
-| Linux | x86_64 | GTK 3 + SDL2（X11 / XWayland） | `.deb` / `.rpm` / AppImage | 対応済み |
+| Linux | x86_64 / arm64 | GTK 3 + SDL2（X11 / XWayland） | `.deb` / `.rpm` / AppImage | 対応済み |
 
 Linux 版は X11 セッション、または Wayland セッション上の XWayland を使用します。GTK3 がメインウィンドウ、メニュー、ステータス、設定画面を所有し、SDL2 は同じウィンドウ内のゲーム領域へ直接描画します。Wayland ネイティブバックエンドは未対応です。`GDK_BACKEND=wayland` や `SDL_VIDEODRIVER=wayland` を明示した環境では起動せず、X11 / XWayland を使用するよう案内します。
 

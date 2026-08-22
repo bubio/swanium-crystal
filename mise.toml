@@ -81,17 +81,17 @@ run = "sh tools/verify_linux_launcher.sh bin/swanium-crystal"
 [tasks.package-linux-deb]
 description = "Create the Debian package"
 depends = ["build-linux"]
-run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && sh tools/package_linux_deb.sh bin/swanium-crystal dist/swanium-crystal-${version}-linux-amd64.deb"
+run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && arch=$(dpkg --print-architecture) && sh tools/package_linux_deb.sh bin/swanium-crystal dist/swanium-crystal-${version}-linux-${arch}.deb"
 
 [tasks.package-linux-rpm]
 description = "Create the RPM package (requires rpmbuild)"
 depends = ["build-linux"]
-run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && sh tools/package_linux_rpm.sh bin/swanium-crystal dist/swanium-crystal-${version}-linux-x86_64.rpm"
+run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && arch=$(uname -m) && sh tools/package_linux_rpm.sh bin/swanium-crystal dist/swanium-crystal-${version}-linux-${arch}.rpm"
 
 [tasks.package-linux-appimage]
 description = "Create AppImage (requires LINUXDEPLOY)"
 depends = ["build-linux"]
-run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && sh tools/package_linux_appimage.sh bin/swanium-crystal dist/Swanium-Crystal-${version}-linux-x86_64.AppImage"
+run = "version=$(sed -n 's/^version: *//p' shard.yml | head -n 1) && arch=$(uname -m) && sh tools/package_linux_appimage.sh bin/swanium-crystal dist/Swanium-Crystal-${version}-linux-${arch}.AppImage"
 
 [tasks.build-debug]
 description = "Build an unoptimized macOS app bundle for debugger work"

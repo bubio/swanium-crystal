@@ -5,6 +5,7 @@ binary=${1:?usage: package_linux_deb.sh BINARY OUTPUT_DEB}
 output=${2:?usage: package_linux_deb.sh BINARY OUTPUT_DEB}
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=$(sed -n 's/^version: *//p' "$root/shard.yml" | head -n 1)
+architecture=$(dpkg --print-architecture)
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 install -D -m 755 "$binary" "$stage/usr/bin/swanium-crystal"
@@ -16,7 +17,7 @@ Package: swanium-crystal
 Version: $version
 Section: games
 Priority: optional
-Architecture: amd64
+Architecture: $architecture
 Depends: libgtk-3-0, libsdl2-2.0-0, libssl3 | libssl1.1
 Maintainer: Swanium Crystal contributors
 Description: WonderSwan emulator

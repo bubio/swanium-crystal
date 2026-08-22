@@ -36,7 +36,20 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            linuxdeploy-arch: x86_64
+            linuxdeploy-sha256: c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            linuxdeploy-arch: aarch64
+            linuxdeploy-sha256: 620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux window-system dependencies
@@ -71,11 +84,12 @@ jobs:
       - name: Install pinned linuxdeploy
         env:
           LINUXDEPLOY_VERSION: 1-alpha-20251107-1
-          LINUXDEPLOY_SHA256: c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+          LINUXDEPLOY_ARCH: ${{ matrix.linuxdeploy-arch }}
+          LINUXDEPLOY_SHA256: ${{ matrix.linuxdeploy-sha256 }}
         run: |
-          tool="$RUNNER_TEMP/linuxdeploy-x86_64.AppImage"
+          tool="$RUNNER_TEMP/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
           curl --fail --location --output "$tool" \
-            "https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-x86_64.AppImage"
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
           echo "${LINUXDEPLOY_SHA256}  ${tool}" | sha256sum --check
           chmod +x "$tool"
           cd "$RUNNER_TEMP"
@@ -89,7 +103,7 @@ jobs:
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: swanium-crystal-linux-x86_64
+          name: swanium-crystal-linux-${{ matrix.arch }}
           path: |
             dist/*.deb
             dist/*.rpm
