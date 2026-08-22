@@ -426,7 +426,7 @@ module Swanium
               end
             end
             controls.pump
-            capture_controller_binding(controls, controller)
+            controller = capture_controller_binding(controls, controller)
             if controls.take_pause_request?
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
@@ -610,7 +610,7 @@ module Swanium
               end
             end
             controls.pump
-            capture_controller_binding(controls, controller)
+            controller = capture_controller_binding(controls, controller)
             if path = controls.take_open_rom_path
               opened_rom_path = path
               running = false
@@ -1060,12 +1060,10 @@ module Swanium
       end
 
       private def self.initialize_sdl(flags : UInt32) : Int32
-        {% if flag?(:linux) %}
-          # SDL wraps a child of the focused GTK window, so SDL itself never
-          # considers its hidden foreign window focused. Keep controller state
-          # polling active while GTK owns application focus.
-          LibSDL.set_hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
-        {% end %}
+        # Native settings windows take focus away from SDL's game window while
+        # controller bindings are being captured. Keep controller state polling
+        # active so a button pressed in Settings is still visible to SDL.
+        LibSDL.set_hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
         LibSDL.init(flags)
       end
 
@@ -1209,13 +1207,34 @@ module Swanium
         result
       end
 
-      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Controller?) : Nil
-        return unless controller
-        21.times do |button|
-          if controller.button(button) != 0
-            break if controls.capture_controller_button(button)
+      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Controller?) : Controller?
+        return controller unless controls.controller_capture?
+
+        # Refresh explicitly while a native settings window owns focus. Then
+        # try the active controller first and every other attached device so a
+        # stale virtual/first controller cannot prevent rebinding a real pad.
+        LibSDL.joystick_update
+        if controller
+          21.times do |button|
+            return controller if controller.button(button) != 0 && controls.capture_controller_button(button)
           end
         end
+
+        index = 0
+        while index < LibSDL.num_joysticks
+          candidate = Controller.open_at(index)
+          if candidate
+            21.times do |button|
+              if candidate.button(button) != 0 && controls.capture_controller_button(button)
+                controller.try(&.close)
+                return candidate
+              end
+            end
+            candidate.close
+          end
+          index += 1
+        end
+        controller
       end
 
       private def self.rotate_input_right(keys : UInt16) : UInt16

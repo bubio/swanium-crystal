@@ -29,6 +29,7 @@ static int status_layout_pending;
 static int last_client_width = -1, last_client_height = -1;
 static HFONT volume_icon_font;
 static int native_keyboard_capture = -1;
+static int native_controller_capture = -1;
 static int last_paused = -1, last_scale = -1, last_fullscreen = -1, last_renderer = -1;
 static char last_status_title[512], last_status_fps[64];
 
@@ -124,8 +125,27 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT message, WPARAM wparam, LP
     }
     if ((id >= 400 && id <= 410) || (id >= 500 && id <= 502) || id == 420 || id == 520) {
       action = id;
-      if (id >= 400 && id <= 410) { native_keyboard_capture = id - 400; SetWindowTextW(keyboard_buttons[id - 400], L"Press a key..."); SetFocus(hwnd); }
-      if (id >= 500 && id <= 502) SetWindowTextW(controller_buttons[id - 500], L"Press a button...");
+      if (native_keyboard_capture >= 0 && keyboard_names[native_keyboard_capture]) {
+        wchar_t *name = utf8_to_wide(keyboard_names[native_keyboard_capture]);
+        if (name) SetWindowTextW(keyboard_buttons[native_keyboard_capture], name);
+        free(name);
+      }
+      if (native_controller_capture >= 0 && button_names[native_controller_capture]) {
+        wchar_t *name = utf8_to_wide(button_names[native_controller_capture]);
+        if (name) SetWindowTextW(controller_buttons[native_controller_capture], name);
+        free(name);
+      }
+      native_keyboard_capture = -1;
+      native_controller_capture = -1;
+      if (id >= 400 && id <= 410) {
+        native_keyboard_capture = id - 400;
+        SetWindowTextW(keyboard_buttons[native_keyboard_capture], L"Press a key...");
+        SetFocus(hwnd);
+      }
+      if (id >= 500 && id <= 502) {
+        native_controller_capture = id - 500;
+        SetWindowTextW(controller_buttons[native_controller_capture], L"Press a button...");
+      }
       return 0;
     }
     if (id == 530 || id == 531) {
@@ -140,6 +160,7 @@ static LRESULT CALLBACK settings_proc(HWND hwnd, UINT message, WPARAM wparam, LP
   } else if (message == WM_CLOSE) {
     action = 531; DestroyWindow(hwnd); restore_game_focus(); return 0;
   } else if (message == WM_DESTROY) {
+    native_keyboard_capture = -1; native_controller_capture = -1;
     settings_window = NULL; return 0;
   }
   return DefWindowProcW(hwnd, message, wparam, lparam);

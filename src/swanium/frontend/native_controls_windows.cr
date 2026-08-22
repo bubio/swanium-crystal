@@ -46,8 +46,12 @@ module Swanium::Frontend
       when WindowsMenu::SETTINGS
         @settings_snapshot = Platform::StateStore.default.settings.dup
         WindowsMenu.settings; sync_settings
-      when 400..410 then @keyboard_capture = action - 400
-      when 500..502 then @controller_capture = action - 500
+      when 400..410
+        @keyboard_capture = action - 400
+        @controller_capture = nil
+      when 500..502
+        @controller_capture = action - 500
+        @keyboard_capture = nil
       when 420 then InputBindings.default.reset_keyboard; @keyboard_capture = nil; sync_settings
       when 520 then InputBindings.default.reset_controller; @controller_capture = nil; sync_settings
       when 530 then @settings_snapshot = nil
@@ -98,6 +102,7 @@ module Swanium::Frontend
       InputBindings.default.set_controller_button([:a, :b, :start][action], button)
       @controller_capture = nil; sync_settings; true
     end
+    def controller_capture? : Bool; !@controller_capture.nil?; end
     def volume : Int32
       value = WindowsMenu.volume
       if value != @volume
