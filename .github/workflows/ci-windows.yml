@@ -1,0 +1,106 @@
+name: CI Windows
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "src/**"
+      - "spec/**"
+      - "tools/**"
+      - "mise.toml"
+      - "mise.lock"
+      - "shard.yml"
+      - "shard.lock"
+      - ".github/workflows/ci-windows.yml"
+      - ".github/workflows/publish-release-assets.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "src/**"
+      - "spec/**"
+      - "tools/**"
+      - "mise.toml"
+      - "mise.lock"
+      - "shard.yml"
+      - "shard.lock"
+      - ".github/workflows/ci-windows.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-bundle:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-2025
+            sdl-arch: x64
+            experimental: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.sdl-arch }}
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
+        with:
+          cache: true
+      - name: Install SDL2 development package
+        shell: pwsh
+        env:
+          SDL_VERSION: "2.32.10"
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "SDL2-devel.zip"
+          Invoke-WebRequest "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL_VERSION/SDL2-devel-$env:SDL_VERSION-VC.zip" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'AF347939395A58B365846AAEA27391E69F9EC9D4DD650D6AC40802159B418A6E') { throw 'SDL2 archive checksum mismatch' }
+          Expand-Archive $archive -DestinationPath $env:RUNNER_TEMP
+          "SWANIUM_SDL2_DIR=$env:RUNNER_TEMP\SDL2-$env:SDL_VERSION" | Out-File $env:GITHUB_ENV -Append
+      - name: Verify architecture and specs
+        shell: pwsh
+        run: |
+          crystal --version
+          if ((crystal --version) -notmatch 'Default target: x86_64') { throw "Unexpected Crystal target" }
+          crystal spec
+      - name: Build Windows application
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/build_windows.ps1
+      - name: Verify executable and runtime payload
+        shell: pwsh
+        run: |
+          bin\swanium-crystal.exe --version
+          if (-not (Test-Path bin\SDL2.dll)) { throw "SDL2.dll is missing" }
+          dumpbin /headers bin\swanium-crystal.exe | Select-String '8664 machine'
+      - name: Run copyright-free headless fixture
+        shell: pwsh
+        run: crystal run tools/run_headless_fixture.cr -- bin\swanium-crystal.exe
+      - name: Package Windows application
+        shell: pwsh
+        run: |
+          $version = (Select-String '^version: *(.+)$' shard.yml).Matches[0].Groups[1].Value
+          pwsh -NoProfile -File tools/package_windows.ps1 -Executable bin\swanium-crystal.exe -Output "dist\Swanium-Crystal-$version-windows-${{ matrix.arch }}.zip"
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swanium-crystal-windows-${{ matrix.arch }}
+          path: dist/Swanium-Crystal-*-windows-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'release'
+    needs: test-and-bundle
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release-assets.yml
+    with:
+      asset-patterns: |
+        *.zip

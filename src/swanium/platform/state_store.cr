@@ -94,6 +94,8 @@ module Swanium
                      else
                        {% if flag?(:darwin) %}
                          Path.home / "Library" / "Application Support"
+                       {% elsif flag?(:windows) %}
+                         Path[ENV["LOCALAPPDATA"]? || (Path.home / "AppData" / "Local").to_s]
                        {% else %}
                          Path.home / ".local" / "state"
                        {% end %}

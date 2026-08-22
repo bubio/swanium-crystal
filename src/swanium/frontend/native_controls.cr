@@ -250,6 +250,8 @@
       end
     end
   end
+{% elsif flag?(:windows) %}
+  require "./native_controls_windows"
 {% else %}
   require "./native_controls_linux"
 {% end %}

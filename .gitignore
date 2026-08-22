@@ -5,3 +5,9 @@
 /bin/linux-native-wayland-probe
 /dist/
 /.mise.local.toml
+/.tools/
+/.artifacts/
+/bin/.crystal-cache/
+/bin/*.dll
+/bin/*.exe
+/bin/*.obj

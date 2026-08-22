@@ -254,7 +254,11 @@ module Swanium
           native_window = controls.install_menus(game_width, game_height, x, y)
           window = LibSDL.create_window_from(native_window)
         {% else %}
-          window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 22, flags)
+          {% if flag?(:windows) %}
+            window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 28, flags)
+          {% else %}
+            window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 22, flags)
+          {% end %}
           controls.install_menus
         {% end %}
         raise SdlError.new(error_message) if window.null?
@@ -314,6 +318,7 @@ module Swanium
             Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
           controller = Controller.open_first
           controls.update_state_slots("video-demo")
 
@@ -511,6 +516,7 @@ module Swanium
             display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
+          resize_game_window(controls, window, display_width, display_height, scale)
           controller = Controller.open_first
           controls.update_state_slots(state_id)
 
@@ -858,6 +864,77 @@ module Swanium
             LibSDL.quit
             controls.close
           end
+        {% elsif flag?(:windows) %}
+          controls = Frontend::NativeControls.start("Swanium Crystal SDL2 smoke test")
+          if initialize_sdl(INIT_VIDEO) != 0
+            controls.close
+            raise SdlError.new(error_message)
+          end
+          window = Pointer(Void).null
+          renderer = Pointer(Void).null
+          begin
+            window = create_game_window(controls, "Swanium Crystal SDL2 smoke test",
+              WINDOWPOS_CENTERED, WINDOWPOS_CENTERED, 224, 144, controls.initial_scale, WINDOW_SHOWN)
+            renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
+            renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+            raise SdlError.new(error_message) if renderer.null?
+            controls.attach_status(window)
+            raise SdlError.new("Windows status bar was not attached") unless controls.reserved_status_height(window) > 0
+            raise SdlError.new("Windows volume slider extends outside the status bar") unless Frontend::WindowsMenu.smoke_status_layout_valid
+            controls.update_status("SDL2 smoke test", 60.0, false)
+            controls.update_menu_state(false, controls.initial_scale, false, 0)
+            Frontend::WindowsMenu.smoke_open_settings
+            raise SdlError.new("Windows settings must have Keyboard and Controller tabs") unless Frontend::WindowsMenu.smoke_settings_tab_count == 2
+            raise SdlError.new("Windows settings tab labels are incorrect") unless Frontend::WindowsMenu.smoke_settings_tabs_named
+            raise SdlError.new("Windows Controller settings tab could not be selected") unless Frontend::WindowsMenu.smoke_select_settings_tab(1)
+            original_x1 = Frontend::InputBindings.default.scancode(:x1)
+            Frontend::WindowsMenu.smoke_begin_keyboard_capture(0)
+            controls.pump
+            begin_taken_action = Frontend::WindowsMenu.smoke_last_taken_action
+            native_capture = Frontend::WindowsMenu.smoke_keyboard_capture
+            Frontend::WindowsMenu.smoke_send_key('W'.ord)
+            pending_action = Frontend::WindowsMenu.smoke_pending_action
+            controls.pump
+            unless Frontend::InputBindings.default.scancode(:x1) == SC_W
+              actual_binding = Frontend::InputBindings.default.scancode(:x1)
+              raise SdlError.new("Windows settings did not capture a keyboard binding " \
+                                 "(begin action=#{begin_taken_action}, native capture=#{native_capture}, " \
+                                 "pending action=#{pending_action}, binding=#{actual_binding})")
+            end
+            Frontend::InputBindings.default.set(:x1, original_x1)
+            Frontend::WindowsMenu.smoke_close_settings
+            controls.pump
+            raise SdlError.new("Windows settings did not return keyboard focus to the game") unless Frontend::WindowsMenu.smoke_game_has_focus
+            Frontend::WindowsMenu.smoke_focus_volume
+            controls.volume
+            raise SdlError.new("Windows volume control did not return keyboard focus to the game") unless Frontend::WindowsMenu.smoke_game_has_focus
+            Frontend::WindowsMenu.smoke_post_game_key('W'.ord)
+            event = uninitialized LibSDL::Event
+            keyboard_seen = false
+            20.times do |frame|
+              while LibSDL.poll_event(pointerof(event)) != 0
+                keyboard_seen = true if event.type == EVENT_KEYDOWN
+              end
+              controls.pump
+              if frame == 0
+                resize_game_window(controls, window, 224, 144, 1)
+              elsif frame == 1
+                raise SdlError.new("Windows status layout broke at 1x scale") unless Frontend::WindowsMenu.smoke_status_layout_valid
+              elsif frame == 2
+                resize_game_window(controls, window, 224, 144, 4)
+              elsif frame == 3
+                raise SdlError.new("Windows status layout broke at 4x scale") unless Frontend::WindowsMenu.smoke_status_layout_valid
+              end
+              LibSDL.delay(16_u32)
+            end
+            raise SdlError.new("SDL did not receive keyboard input after a Windows control released focus") unless keyboard_seen
+          ensure
+            LibSDL.destroy_renderer(renderer) unless renderer.null?
+            controls.detach_status
+            LibSDL.destroy_window(window) unless window.null?
+            LibSDL.quit
+            controls.close
+          end
         {% else %}
           if initialize_sdl(INIT_VIDEO) != 0
             raise SdlError.new(error_message)
@@ -914,6 +991,7 @@ module Swanium
             Frontend::LinuxMenu.present
           {% end %}
           controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
           controls.update_status("No ROM loaded", 0.0, false)
 
           event = uninitialized LibSDL::Event

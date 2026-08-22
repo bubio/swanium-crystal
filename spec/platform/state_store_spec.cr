@@ -3,10 +3,11 @@ require "../../src/swanium/platform/state_store"
 
 describe Swanium::Platform::StateStore do
   it "derives save paths from an injected application-state root" do
-    store = Swanium::Platform::StateStore.new(Path["/tmp/swanium-state-store-spec"])
+    root = Path["/tmp/swanium-state-store-spec"]
+    store = Swanium::Platform::StateStore.new(root)
 
-    store.path("My Game", 3).should eq(Path["/tmp/swanium-state-store-spec/swanium-crystal/states/My_Game/slot-3.swcstate"])
-    store.cartridge_save_path("My Game").should eq(Path["/tmp/swanium-state-store-spec/swanium-crystal/saves/My_Game.sav"])
+    store.path("My Game", 3).should eq(root / "swanium-crystal" / "states" / "My_Game" / "slot-3.swcstate")
+    store.cartridge_save_path("My Game").should eq(root / "swanium-crystal" / "saves" / "My_Game.sav")
   end
 
   it "rejects save-state slots outside the supported UI range" do
