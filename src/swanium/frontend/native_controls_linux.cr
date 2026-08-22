@@ -152,7 +152,10 @@ module Swanium::Frontend
       InputBindings.default.set_controller_button([:a, :b, :start][action], button)
       @controller_capture = nil; sync_settings; true
     end
-    def controller_capture? : Bool; !@controller_capture.nil?; end
+
+    def controller_capture? : Bool
+      !@controller_capture.nil?
+    end
 
     def volume : Int32
       value = LinuxMenu.volume

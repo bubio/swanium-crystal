@@ -212,7 +212,10 @@
           sync_settings
           true
         end
-        def controller_capture? : Bool; !@controller_capture.nil?; end
+
+        def controller_capture? : Bool
+          !@controller_capture.nil?
+        end
 
         def volume : Int32
           value = MacosMenu.volume

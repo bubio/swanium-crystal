@@ -69,7 +69,7 @@ jobs:
         shell: pwsh
         run: |
           crystal --version
-          if ((crystal --version) -notmatch 'Default target: x86_64') { throw "Unexpected Crystal target" }
+          if ((crystal --version | Out-String) -notmatch 'Default target: x86_64-pc-windows-msvc') { throw "Unexpected Crystal target" }
           crystal spec
       - name: Build Windows application
         shell: pwsh
