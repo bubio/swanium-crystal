@@ -37,6 +37,10 @@ module Swanium::Frontend
       handle
     end
 
+    def refresh_recent_roms : Nil
+      LinuxMenu.recent = Platform::StateStore.default.recent_roms
+    end
+
     def pump : Nil
       LinuxMenu.pump
       case action = LinuxMenu.take_action

@@ -34,6 +34,10 @@
 
         def install_menus : Nil
           MacosMenu.install
+          refresh_recent_roms
+        end
+
+        def refresh_recent_roms : Nil
           MacosMenu.set_recent_roms(Platform::StateStore.default.recent_roms)
         end
 

@@ -284,6 +284,60 @@ module Swanium
         {% end %}
       end
 
+      # Resources which belong to the application rather than to a loaded
+      # cartridge. Keeping these alive avoids replacing the native top-level
+      # window whenever Open ROM is used.
+      class WindowSession
+        getter controls : Frontend::NativeControls
+        getter window : Void*
+        getter renderer : Void*
+        property scale : Int32
+        property fullscreen : Bool
+
+        def initialize(@controls, @window, @renderer, @scale, @fullscreen = false)
+        end
+      end
+
+      def self.open_window_session(title : String = "Swanium Crystal") : WindowSession
+        controls = Frontend::NativeControls.start(title)
+        if initialize_sdl(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
+          controls.close
+          raise SdlError.new(error_message)
+        end
+        window = Pointer(Void).null
+        renderer = Pointer(Void).null
+        begin
+          window_x, window_y = restored_window_position
+          scale = controls.initial_scale
+          window = create_game_window(controls, title, window_x, window_y,
+            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale, GAME_WINDOW_FLAGS)
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
+          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+          raise SdlError.new(error_message) if renderer.null?
+          {% if flag?(:linux) %}
+            Frontend::LinuxMenu.present
+          {% end %}
+          controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
+          WindowSession.new(controls, window, renderer, scale)
+        rescue ex
+          LibSDL.destroy_renderer(renderer) unless renderer.null?
+          LibSDL.destroy_window(window) unless window.null?
+          LibSDL.quit
+          controls.close
+          raise ex
+        end
+      end
+
+      def self.close_window_session(session : WindowSession) : Nil
+        save_window_position(session.window) unless session.fullscreen
+        session.controls.detach_status
+        LibSDL.destroy_renderer(session.renderer)
+        LibSDL.destroy_window(session.window)
+        LibSDL.quit
+        session.controls.close
+      end
+
       # Interactive, copyright-free display/input verification program. It
       # stays open until the window close button is pressed. Escape leaves
       # fullscreen mode when it is active.
@@ -476,15 +530,12 @@ module Swanium
       # Returns a newly selected ROM path when the native File > Open ROM…
       # action asks the application layer to replace the current cartridge.
       def self.play(cartridge : Core::CartridgeImage, title : String, frame_limit : UInt32? = nil,
-                    verify_state_roundtrip : Bool = false) : String?
-        controls = Frontend::NativeControls.start(title)
-        if initialize_sdl(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
-          controls.close
-          raise SdlError.new(error_message)
-        end
-
-        window = Pointer(Void).null
-        renderer = Pointer(Void).null
+                    verify_state_roundtrip : Bool = false, session : WindowSession? = nil) : String?
+        owned_session = session.nil?
+        active_session = session || open_window_session("Swanium Crystal - #{title}")
+        controls = active_session.controls
+        window = active_session.window
+        renderer = active_session.renderer
         texture = Pointer(Void).null
         controller = nil.as(Controller?)
         audio_device = 0_u32
@@ -498,24 +549,13 @@ module Swanium
         display_width = vertical ? Core::Ppu::SCREEN_HEIGHT : Core::Ppu::SCREEN_WIDTH
         display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
         rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
-        scale = controls.initial_scale
+        scale = active_session.scale
         begin
+          controls.refresh_recent_roms
           StateStore.default.load_cartridge_save(bus, title)
-          window_x, window_y = restored_window_position
-          window = create_game_window(controls,
-            "Swanium Crystal - #{title}", window_x, window_y,
-            display_width, display_height, scale, WINDOW_SHOWN
-          )
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
-          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
-          raise SdlError.new(error_message) if renderer.null?
-          {% if flag?(:linux) %}
-            Frontend::LinuxMenu.present
-          {% end %}
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
             display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
-          controls.attach_status(window)
           resize_game_window(controls, window, display_width, display_height, scale)
           controller = Controller.open_first
           controls.update_state_slots(state_id)
@@ -549,7 +589,7 @@ module Swanium
           fps = FRAME_RATE
           fps_anchor = LibSDL.get_performance_counter
           emulated_frames = 0_u32
-          fullscreen = false
+          fullscreen = active_session.fullscreen
           renderer_mode = 0
           while running && !controls.quit_requested && frame_limit.try { |limit| presented_frames < limit } != false
             while LibSDL.poll_event(pointerof(event)) != 0
@@ -586,11 +626,13 @@ module Swanium
             end
             if requested_scale = controls.take_scale_request
               scale = requested_scale
+              active_session.scale = scale
               resize_game_window(controls, window, display_width, display_height, scale)
               controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
+              active_session.fullscreen = fullscreen
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = fullscreen
               {% else %}
@@ -630,6 +672,7 @@ module Swanium
             keys = rotate_input_right(keys) if vertical
             if escape && fullscreen
               fullscreen = false
+              active_session.fullscreen = false
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = false
               {% else %}
@@ -680,15 +723,10 @@ module Swanium
           end
         ensure
           StateStore.default.save_cartridge_save(bus, title)
-          save_window_position(window) unless window.null? || fullscreen
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
-          LibSDL.destroy_renderer(renderer) unless renderer.null?
-          controls.detach_status
-          LibSDL.destroy_window(window) unless window.null?
-          LibSDL.quit
-          controls.close
+          close_window_session(active_session) if owned_session
         end
         opened_rom_path
       end
@@ -965,32 +1003,16 @@ module Swanium
       # The initial state matches the main Swanium frontend: a normal emulator
       # window remains open with no ROM loaded. Open ROM… returns a selected
       # path to the application layer, which then starts the game.
-      def self.launcher : String?
-        controls = Frontend::NativeControls.start("Swanium Crystal")
-        if initialize_sdl(INIT_VIDEO) != 0
-          controls.close
-          raise SdlError.new(error_message)
-        end
-
-        window = Pointer(Void).null
-        renderer = Pointer(Void).null
+      def self.launcher(session : WindowSession? = nil) : String?
+        owned_session = session.nil?
+        active_session = session || open_window_session
+        controls = active_session.controls
+        window = active_session.window
+        renderer = active_session.renderer
         opened_rom_path = nil.as(String?)
-        scale = controls.initial_scale
-        fullscreen = false
+        scale = active_session.scale
+        fullscreen = active_session.fullscreen
         begin
-          window_x, window_y = restored_window_position
-          window = create_game_window(controls,
-            "Swanium Crystal", window_x, window_y,
-            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT,
-            scale, GAME_WINDOW_FLAGS
-          )
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
-          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
-          raise SdlError.new(error_message) if renderer.null?
-          {% if flag?(:linux) %}
-            Frontend::LinuxMenu.present
-          {% end %}
-          controls.attach_status(window)
           resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
           controls.update_status("No ROM loaded", 0.0, false)
 
@@ -1007,11 +1029,13 @@ module Swanium
             end
             if requested_scale = controls.take_scale_request
               scale = requested_scale
+              active_session.scale = scale
               resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
               controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
+              active_session.fullscreen = fullscreen
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = fullscreen
               {% else %}
@@ -1026,12 +1050,7 @@ module Swanium
           end
           opened_rom_path
         ensure
-          save_window_position(window) unless window.null? || fullscreen
-          controls.detach_status
-          LibSDL.destroy_renderer(renderer) unless renderer.null?
-          LibSDL.destroy_window(window) unless window.null?
-          LibSDL.quit
-          controls.close
+          close_window_session(active_session) if owned_session
         end
       end
 

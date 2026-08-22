@@ -24,6 +24,8 @@ module Swanium::Frontend
       WindowsMenu.recent = Platform::StateStore.default.recent_roms
     end
 
+    def refresh_recent_roms : Nil; WindowsMenu.recent = Platform::StateStore.default.recent_roms; end
+
     def pump : Nil
       WindowsMenu.pump
       case action = WindowsMenu.take_action
