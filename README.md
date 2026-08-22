@@ -7,11 +7,13 @@ Swanium Crystal は、WonderSwan Crystal、WonderSwan Color、WonderSwan のゲ�
 [Releases](https://github.com/bubio/swanium-crystal/releases) から、お使いの環境に合ったファイルをダウンロードしてください。
 macOS 向けには `Swanium-Crystal-<version>-macos-arm64.zip` または
 `Swanium-Crystal-<version>-macos-x86_64.zip` を展開して利用します。
+Windows 向けには `Swanium-Crystal-<version>-windows-x86_64.zip` を展開し、
+`swanium-crystal.exe` を実行します。
 
 | プラットフォーム | CPU | 最小OS | 配布形式 | 状態 |
 | --- | --- | --- | --- | --- |
 | macOS | Apple Silicon / Intel | macOS 13.5 | `.app` | 対応済み |
-| Windows | — | — | — | 今後対応予定 |
+| Windows | x86_64 | Windows 10 / 11 | `.zip` | 対応済み |
 | Linux | x86_64 | GTK 3 + SDL2（X11 / XWayland） | `.deb` / `.rpm` / AppImage | 対応済み |
 
 Linux 版は X11 セッション、または Wayland セッション上の XWayland を使用します。GTK3 がメインウィンドウ、メニュー、ステータス、設定画面を所有し、SDL2 は同じウィンドウ内のゲーム領域へ直接描画します。Wayland ネイティブバックエンドは未対応です。`GDK_BACKEND=wayland` や `SDL_VIDEODRIVER=wayland` を明示した環境では起動せず、X11 / XWayland を使用するよう案内します。
@@ -50,3 +52,4 @@ Linux 版は X11 セッション、または Wayland セッション上の XWayl
 | プラットフォーム | セーブデータ | ステート・設定 |
 | --- | --- | --- |
 | macOS | `~/Library/Application Support/swanium-crystal/saves` | `~/Library/Application Support/swanium-crystal` |
+| Windows | `%LOCALAPPDATA%\swanium-crystal\saves` | `%LOCALAPPDATA%\swanium-crystal` |

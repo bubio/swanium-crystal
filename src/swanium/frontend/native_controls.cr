@@ -34,6 +34,10 @@
 
         def install_menus : Nil
           MacosMenu.install
+          refresh_recent_roms
+        end
+
+        def refresh_recent_roms : Nil
           MacosMenu.set_recent_roms(Platform::StateStore.default.recent_roms)
         end
 
@@ -209,6 +213,10 @@
           true
         end
 
+        def controller_capture? : Bool
+          !@controller_capture.nil?
+        end
+
         def volume : Int32
           value = MacosMenu.volume
           if value != @volume
@@ -250,6 +258,8 @@
       end
     end
   end
+{% elsif flag?(:windows) %}
+  require "./native_controls_windows"
 {% else %}
   require "./native_controls_linux"
 {% end %}

@@ -83,16 +83,21 @@ module Swanium
         end
         puts "#{title}: completed #{frames} headless frame(s)"
       else
-        current_path = path
-        loop do
-          extension = File.extname(current_path).downcase
-          raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
-          Platform::StateStore.default.record_recent_rom(current_path)
-          cartridge = Core::CartridgeImage.from_bytes(File.read(current_path).to_slice)
-          title = File.basename(current_path)
-          next_path = Platform::Sdl.play(cartridge, title)
-          break unless next_path
-          current_path = next_path
+        session = Platform::Sdl.open_window_session
+        begin
+          current_path = path
+          loop do
+            extension = File.extname(current_path).downcase
+            raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
+            Platform::StateStore.default.record_recent_rom(current_path)
+            cartridge = Core::CartridgeImage.from_bytes(File.read(current_path).to_slice)
+            title = File.basename(current_path)
+            next_path = Platform::Sdl.play(cartridge, title, session: session)
+            break unless next_path
+            current_path = next_path
+          end
+        ensure
+          Platform::Sdl.close_window_session(session)
         end
       end
     elsif video_smoke
@@ -104,8 +109,18 @@ module Swanium
     else
       # A Finder-launched app has no command-line ROM path. Keep the main
       # window open and let its Open ROM menu action select a cartridge.
-      if path = Platform::Sdl.launcher
-        run(["--rom", path])
+      session = Platform::Sdl.open_window_session
+      begin
+        current_path = Platform::Sdl.launcher(session)
+        while path = current_path
+          extension = File.extname(path).downcase
+          raise ArgumentError.new("ROM must use the .ws or .wsc extension") unless extension.in?(".ws", ".wsc")
+          Platform::StateStore.default.record_recent_rom(path)
+          cartridge = Core::CartridgeImage.from_bytes(File.read(path).to_slice)
+          current_path = Platform::Sdl.play(cartridge, File.basename(path), session: session)
+        end
+      ensure
+        Platform::Sdl.close_window_session(session)
       end
     end
   end

@@ -36,6 +36,15 @@ run = "sh tools/build_macos_app.sh 'bin/Swanium Crystal.app' release"
 description = "Build the optimized Linux executable"
 run = "sh tools/build_linux.sh bin/swanium-crystal"
 
+[tasks.build-windows]
+description = "Build the optimized Windows executable (requires an MSVC shell and SWANIUM_SDL2_DIR)"
+run = "pwsh -NoProfile -File tools/build_windows.ps1 -Output bin/swanium-crystal.exe -Configuration release"
+
+[tasks.package-windows]
+description = "Create the Windows ZIP distribution"
+depends = ["build-windows"]
+run = "pwsh -NoProfile -Command \"$version = (Select-String '^version: *(.+)$' shard.yml).Matches[0].Groups[1].Value; $arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x86_64' }; & tools/package_windows.ps1 -Executable bin/swanium-crystal.exe -Output ('dist/Swanium-Crystal-{0}-windows-{1}.zip' -f $version,$arch)\""
+
 [tasks.linux-native-probe]
 description = "Verify SDL2 rendering inside a GTK3 X11 child window"
 run = "sh tools/run_linux_native_probe.sh"

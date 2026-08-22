@@ -254,7 +254,11 @@ module Swanium
           native_window = controls.install_menus(game_width, game_height, x, y)
           window = LibSDL.create_window_from(native_window)
         {% else %}
-          window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 22, flags)
+          {% if flag?(:windows) %}
+            window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 28, flags)
+          {% else %}
+            window = LibSDL.create_window(title, x, y, game_width * scale, game_height * scale + 22, flags)
+          {% end %}
           controls.install_menus
         {% end %}
         raise SdlError.new(error_message) if window.null?
@@ -278,6 +282,60 @@ module Swanium
           width, height = Frontend::LinuxMenu.game_size
           LibSDL.set_window_size(window, width, height) if width > 0 && height > 0
         {% end %}
+      end
+
+      # Resources which belong to the application rather than to a loaded
+      # cartridge. Keeping these alive avoids replacing the native top-level
+      # window whenever Open ROM is used.
+      class WindowSession
+        getter controls : Frontend::NativeControls
+        getter window : Void*
+        getter renderer : Void*
+        property scale : Int32
+        property fullscreen : Bool
+
+        def initialize(@controls, @window, @renderer, @scale, @fullscreen = false)
+        end
+      end
+
+      def self.open_window_session(title : String = "Swanium Crystal") : WindowSession
+        controls = Frontend::NativeControls.start(title)
+        if initialize_sdl(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
+          controls.close
+          raise SdlError.new(error_message)
+        end
+        window = Pointer(Void).null
+        renderer = Pointer(Void).null
+        begin
+          window_x, window_y = restored_window_position
+          scale = controls.initial_scale
+          window = create_game_window(controls, title, window_x, window_y,
+            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale, GAME_WINDOW_FLAGS)
+          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
+          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+          raise SdlError.new(error_message) if renderer.null?
+          {% if flag?(:linux) %}
+            Frontend::LinuxMenu.present
+          {% end %}
+          controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
+          WindowSession.new(controls, window, renderer, scale)
+        rescue ex
+          LibSDL.destroy_renderer(renderer) unless renderer.null?
+          LibSDL.destroy_window(window) unless window.null?
+          LibSDL.quit
+          controls.close
+          raise ex
+        end
+      end
+
+      def self.close_window_session(session : WindowSession) : Nil
+        save_window_position(session.window) unless session.fullscreen
+        session.controls.detach_status
+        LibSDL.destroy_renderer(session.renderer)
+        LibSDL.destroy_window(session.window)
+        LibSDL.quit
+        session.controls.close
       end
 
       # Interactive, copyright-free display/input verification program. It
@@ -314,6 +372,7 @@ module Swanium
             Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT)
           raise SdlError.new(error_message) if texture.null?
           controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
           controller = Controller.open_first
           controls.update_state_slots("video-demo")
 
@@ -367,7 +426,7 @@ module Swanium
               end
             end
             controls.pump
-            capture_controller_binding(controls, controller)
+            controller = capture_controller_binding(controls, controller)
             if controls.take_pause_request?
               debugger.toggle_pause
               LibSDL.pause_audio_device(audio_device, debugger.paused ? 1 : 0)
@@ -471,15 +530,12 @@ module Swanium
       # Returns a newly selected ROM path when the native File > Open ROM…
       # action asks the application layer to replace the current cartridge.
       def self.play(cartridge : Core::CartridgeImage, title : String, frame_limit : UInt32? = nil,
-                    verify_state_roundtrip : Bool = false) : String?
-        controls = Frontend::NativeControls.start(title)
-        if initialize_sdl(INIT_VIDEO | INIT_AUDIO | INIT_GAMECONTROLLER) != 0
-          controls.close
-          raise SdlError.new(error_message)
-        end
-
-        window = Pointer(Void).null
-        renderer = Pointer(Void).null
+                    verify_state_roundtrip : Bool = false, session : WindowSession? = nil) : String?
+        owned_session = session.nil?
+        active_session = session || open_window_session("Swanium Crystal - #{title}")
+        controls = active_session.controls
+        window = active_session.window
+        renderer = active_session.renderer
         texture = Pointer(Void).null
         controller = nil.as(Controller?)
         audio_device = 0_u32
@@ -493,24 +549,14 @@ module Swanium
         display_width = vertical ? Core::Ppu::SCREEN_HEIGHT : Core::Ppu::SCREEN_WIDTH
         display_height = vertical ? Core::Ppu::SCREEN_WIDTH : Core::Ppu::SCREEN_HEIGHT
         rotated_rgba = vertical ? Bytes.new(Core::Ppu::SCREEN_WIDTH * Core::Ppu::SCREEN_HEIGHT * 4, 0_u8) : nil
-        scale = controls.initial_scale
+        scale = active_session.scale
         begin
+          controls.refresh_recent_roms
           StateStore.default.load_cartridge_save(bus, title)
-          window_x, window_y = restored_window_position
-          window = create_game_window(controls,
-            "Swanium Crystal - #{title}", window_x, window_y,
-            display_width, display_height, scale, WINDOW_SHOWN
-          )
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
-          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
-          raise SdlError.new(error_message) if renderer.null?
-          {% if flag?(:linux) %}
-            Frontend::LinuxMenu.present
-          {% end %}
           texture = LibSDL.create_texture(renderer, PIXELFORMAT_RGBA32, TEXTUREACCESS_STREAMING,
             display_width, display_height)
           raise SdlError.new(error_message) if texture.null?
-          controls.attach_status(window)
+          resize_game_window(controls, window, display_width, display_height, scale)
           controller = Controller.open_first
           controls.update_state_slots(state_id)
 
@@ -543,7 +589,7 @@ module Swanium
           fps = FRAME_RATE
           fps_anchor = LibSDL.get_performance_counter
           emulated_frames = 0_u32
-          fullscreen = false
+          fullscreen = active_session.fullscreen
           renderer_mode = 0
           while running && !controls.quit_requested && frame_limit.try { |limit| presented_frames < limit } != false
             while LibSDL.poll_event(pointerof(event)) != 0
@@ -564,7 +610,7 @@ module Swanium
               end
             end
             controls.pump
-            capture_controller_binding(controls, controller)
+            controller = capture_controller_binding(controls, controller)
             if path = controls.take_open_rom_path
               opened_rom_path = path
               running = false
@@ -580,11 +626,13 @@ module Swanium
             end
             if requested_scale = controls.take_scale_request
               scale = requested_scale
+              active_session.scale = scale
               resize_game_window(controls, window, display_width, display_height, scale)
               controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
+              active_session.fullscreen = fullscreen
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = fullscreen
               {% else %}
@@ -624,6 +672,7 @@ module Swanium
             keys = rotate_input_right(keys) if vertical
             if escape && fullscreen
               fullscreen = false
+              active_session.fullscreen = false
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = false
               {% else %}
@@ -674,15 +723,10 @@ module Swanium
           end
         ensure
           StateStore.default.save_cartridge_save(bus, title)
-          save_window_position(window) unless window.null? || fullscreen
           LibSDL.close_audio_device(audio_device) unless audio_device == 0_u32
           controller.try(&.close)
           LibSDL.destroy_texture(texture) unless texture.null?
-          LibSDL.destroy_renderer(renderer) unless renderer.null?
-          controls.detach_status
-          LibSDL.destroy_window(window) unless window.null?
-          LibSDL.quit
-          controls.close
+          close_window_session(active_session) if owned_session
         end
         opened_rom_path
       end
@@ -858,6 +902,77 @@ module Swanium
             LibSDL.quit
             controls.close
           end
+        {% elsif flag?(:windows) %}
+          controls = Frontend::NativeControls.start("Swanium Crystal SDL2 smoke test")
+          if initialize_sdl(INIT_VIDEO) != 0
+            controls.close
+            raise SdlError.new(error_message)
+          end
+          window = Pointer(Void).null
+          renderer = Pointer(Void).null
+          begin
+            window = create_game_window(controls, "Swanium Crystal SDL2 smoke test",
+              WINDOWPOS_CENTERED, WINDOWPOS_CENTERED, 224, 144, controls.initial_scale, WINDOW_SHOWN)
+            renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
+            renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
+            raise SdlError.new(error_message) if renderer.null?
+            controls.attach_status(window)
+            raise SdlError.new("Windows status bar was not attached") unless controls.reserved_status_height(window) > 0
+            raise SdlError.new("Windows volume slider extends outside the status bar") unless Frontend::WindowsMenu.smoke_status_layout_valid
+            controls.update_status("SDL2 smoke test", 60.0, false)
+            controls.update_menu_state(false, controls.initial_scale, false, 0)
+            Frontend::WindowsMenu.smoke_open_settings
+            raise SdlError.new("Windows settings must have Keyboard and Controller tabs") unless Frontend::WindowsMenu.smoke_settings_tab_count == 2
+            raise SdlError.new("Windows settings tab labels are incorrect") unless Frontend::WindowsMenu.smoke_settings_tabs_named
+            raise SdlError.new("Windows Controller settings tab could not be selected") unless Frontend::WindowsMenu.smoke_select_settings_tab(1)
+            original_x1 = Frontend::InputBindings.default.scancode(:x1)
+            Frontend::WindowsMenu.smoke_begin_keyboard_capture(0)
+            controls.pump
+            begin_taken_action = Frontend::WindowsMenu.smoke_last_taken_action
+            native_capture = Frontend::WindowsMenu.smoke_keyboard_capture
+            Frontend::WindowsMenu.smoke_send_key('W'.ord)
+            pending_action = Frontend::WindowsMenu.smoke_pending_action
+            controls.pump
+            unless Frontend::InputBindings.default.scancode(:x1) == SC_W
+              actual_binding = Frontend::InputBindings.default.scancode(:x1)
+              raise SdlError.new("Windows settings did not capture a keyboard binding " \
+                                 "(begin action=#{begin_taken_action}, native capture=#{native_capture}, " \
+                                 "pending action=#{pending_action}, binding=#{actual_binding})")
+            end
+            Frontend::InputBindings.default.set(:x1, original_x1)
+            Frontend::WindowsMenu.smoke_close_settings
+            controls.pump
+            raise SdlError.new("Windows settings did not return keyboard focus to the game") unless Frontend::WindowsMenu.smoke_game_has_focus
+            Frontend::WindowsMenu.smoke_focus_volume
+            controls.volume
+            raise SdlError.new("Windows volume control did not return keyboard focus to the game") unless Frontend::WindowsMenu.smoke_game_has_focus
+            Frontend::WindowsMenu.smoke_post_game_key('W'.ord)
+            event = uninitialized LibSDL::Event
+            keyboard_seen = false
+            20.times do |frame|
+              while LibSDL.poll_event(pointerof(event)) != 0
+                keyboard_seen = true if event.type == EVENT_KEYDOWN
+              end
+              controls.pump
+              if frame == 0
+                resize_game_window(controls, window, 224, 144, 1)
+              elsif frame == 1
+                raise SdlError.new("Windows status layout broke at 1x scale") unless Frontend::WindowsMenu.smoke_status_layout_valid
+              elsif frame == 2
+                resize_game_window(controls, window, 224, 144, 4)
+              elsif frame == 3
+                raise SdlError.new("Windows status layout broke at 4x scale") unless Frontend::WindowsMenu.smoke_status_layout_valid
+              end
+              LibSDL.delay(16_u32)
+            end
+            raise SdlError.new("SDL did not receive keyboard input after a Windows control released focus") unless keyboard_seen
+          ensure
+            LibSDL.destroy_renderer(renderer) unless renderer.null?
+            controls.detach_status
+            LibSDL.destroy_window(window) unless window.null?
+            LibSDL.quit
+            controls.close
+          end
         {% else %}
           if initialize_sdl(INIT_VIDEO) != 0
             raise SdlError.new(error_message)
@@ -888,32 +1003,17 @@ module Swanium
       # The initial state matches the main Swanium frontend: a normal emulator
       # window remains open with no ROM loaded. Open ROM… returns a selected
       # path to the application layer, which then starts the game.
-      def self.launcher : String?
-        controls = Frontend::NativeControls.start("Swanium Crystal")
-        if initialize_sdl(INIT_VIDEO) != 0
-          controls.close
-          raise SdlError.new(error_message)
-        end
-
-        window = Pointer(Void).null
-        renderer = Pointer(Void).null
+      def self.launcher(session : WindowSession? = nil) : String?
+        owned_session = session.nil?
+        active_session = session || open_window_session
+        controls = active_session.controls
+        window = active_session.window
+        renderer = active_session.renderer
         opened_rom_path = nil.as(String?)
-        scale = controls.initial_scale
-        fullscreen = false
+        scale = active_session.scale
+        fullscreen = active_session.fullscreen
         begin
-          window_x, window_y = restored_window_position
-          window = create_game_window(controls,
-            "Swanium Crystal", window_x, window_y,
-            Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT,
-            scale, GAME_WINDOW_FLAGS
-          )
-          renderer = LibSDL.create_renderer(window, -1, RENDERER_ACCELERATED)
-          renderer = LibSDL.create_renderer(window, -1, 0_u32) if renderer.null?
-          raise SdlError.new(error_message) if renderer.null?
-          {% if flag?(:linux) %}
-            Frontend::LinuxMenu.present
-          {% end %}
-          controls.attach_status(window)
+          resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
           controls.update_status("No ROM loaded", 0.0, false)
 
           event = uninitialized LibSDL::Event
@@ -929,11 +1029,13 @@ module Swanium
             end
             if requested_scale = controls.take_scale_request
               scale = requested_scale
+              active_session.scale = scale
               resize_game_window(controls, window, Core::Ppu::SCREEN_WIDTH, Core::Ppu::SCREEN_HEIGHT, scale)
               controls.save_scale(scale)
             end
             if controls.take_fullscreen_request?
               fullscreen = !fullscreen
+              active_session.fullscreen = fullscreen
               {% if flag?(:linux) %}
                 Frontend::LinuxMenu.fullscreen = fullscreen
               {% else %}
@@ -948,12 +1050,7 @@ module Swanium
           end
           opened_rom_path
         ensure
-          save_window_position(window) unless window.null? || fullscreen
-          controls.detach_status
-          LibSDL.destroy_renderer(renderer) unless renderer.null?
-          LibSDL.destroy_window(window) unless window.null?
-          LibSDL.quit
-          controls.close
+          close_window_session(active_session) if owned_session
         end
       end
 
@@ -963,12 +1060,10 @@ module Swanium
       end
 
       private def self.initialize_sdl(flags : UInt32) : Int32
-        {% if flag?(:linux) %}
-          # SDL wraps a child of the focused GTK window, so SDL itself never
-          # considers its hidden foreign window focused. Keep controller state
-          # polling active while GTK owns application focus.
-          LibSDL.set_hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
-        {% end %}
+        # Native settings windows take focus away from SDL's game window while
+        # controller bindings are being captured. Keep controller state polling
+        # active so a button pressed in Settings is still visible to SDL.
+        LibSDL.set_hint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
         LibSDL.init(flags)
       end
 
@@ -1112,13 +1207,34 @@ module Swanium
         result
       end
 
-      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Controller?) : Nil
-        return unless controller
-        21.times do |button|
-          if controller.button(button) != 0
-            break if controls.capture_controller_button(button)
+      private def self.capture_controller_binding(controls : Frontend::NativeControls, controller : Controller?) : Controller?
+        return controller unless controls.controller_capture?
+
+        # Refresh explicitly while a native settings window owns focus. Then
+        # try the active controller first and every other attached device so a
+        # stale virtual/first controller cannot prevent rebinding a real pad.
+        LibSDL.joystick_update
+        if controller
+          21.times do |button|
+            return controller if controller.button(button) != 0 && controls.capture_controller_button(button)
           end
         end
+
+        index = 0
+        while index < LibSDL.num_joysticks
+          candidate = Controller.open_at(index)
+          if candidate
+            21.times do |button|
+              if candidate.button(button) != 0 && controls.capture_controller_button(button)
+                controller.try(&.close)
+                return candidate
+              end
+            end
+            candidate.close
+          end
+          index += 1
+        end
+        controller
       end
 
       private def self.rotate_input_right(keys : UInt16) : UInt16
